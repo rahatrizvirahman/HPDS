@@ -1,0 +1,16 @@
+1. Compile the code examples typing "make"
+2. Slide #7. Execute example "./create_thread"
+3. Slide #8. Execute example "./create_thread_arguments" and "./create_thread_arguments_wrong" for function arguments and return values.
+4. Slide #9-11. Execute example "./sequential_parallel" and "./sequential_parallel_flood" and "./sequential_parallel_persistent_threads" to evaluate thread creation overheads.
+5. Slide #12. Execute example "./race" It is highly unlikely you get a result different than 4, but may happen. Execute example "./race2" to force the vector race.
+6. Slide #12. Execute example "./vector_race" Now you may actually get wrong results, even a aborted execution due to memory error.
+7. Slide #13. Use helgrind to detect data races. Execute "valgrind --tool=helgrind ./race" and "valgrind --tool=helgrind ./vector_race".
+8. Slide #14. Execute example "./vector_race_mutex" for mutex usage.
+9. Slide #16. Execute example "./producer_consumer" for semaphore example.
+10. Slide #16. Execute example "./atomic" and "./atomic_performance" to analyze the syntax and performance of atomic operations.
+11. Slide #17. Execute example "./restroom_with_capacity" to analyze a problem with multiple threads requesting shared/exclusive resources
+
+Exercises:
+
+1. Write Slurm scripts to run the code on Athena
+2. Run the Slurm scripts with a different number of --cpus-per-task and number of threads, observe and compare runtimes
