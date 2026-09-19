@@ -20,11 +20,71 @@ float distance(float* instance_A, float* instance_B, int num_attributes) {
 // Implements a OpenMP kNN where for each candidate query an in-place priority queue is maintained to identify the nearest neighbors
 int* KNN(ArffData* train, ArffData* test, int k) {    
 
-    int* predictions = (int*)calloc(test->num_instances(), sizeof(int));
-    
-    /*************************************************************
-    *** Complete this code and return the array of predictions ***
-    **************************************************************/
+    int num_classes         = train->num_classes();
+    int num_attributes      = train->num_attributes();
+    int train_num_instances = train->num_instances();
+    int test_num_instances  = test->num_instances();
+
+    int* predictions = (int*)calloc(test_num_instances, sizeof(int));
+
+    // get_dataset_matrix() rebuilds the matrix each call, so build it once here
+    float* train_matrix = train->get_dataset_matrix();
+    float* test_matrix  = test->get_dataset_matrix();
+
+    // "omp parallel" + "omp for" instead of the fused "omp parallel for", so
+    // candidates/classCounts can be allocated once per thread below, not once
+    // per iteration. Declaring them here (rather than via private()) is what
+    // makes them private, since private()/firstprivate() only copy the
+    // pointer, not the buffer it points to.
+    #pragma omp parallel
+    {
+        float* candidates = (float*) calloc(k*2, sizeof(float));
+        for(int i = 0; i < 2*k; i++){ candidates[i] = FLT_MAX; }
+        int* classCounts = (int*) calloc(num_classes, sizeof(int));
+
+        #pragma omp for
+        for(int queryIndex = 0; queryIndex < test_num_instances; queryIndex++) {
+            for(int keyIndex = 0; keyIndex < train_num_instances; keyIndex++) {
+
+                float dist = distance(&test_matrix[queryIndex*num_attributes], &train_matrix[keyIndex*num_attributes], num_attributes);
+
+                for(int c = 0; c < k; c++){
+                    if(dist < candidates[2*c]) {
+                        for(int x = k-2; x >= c; x--) {
+                            candidates[2*x+2] = candidates[2*x];
+                            candidates[2*x+3] = candidates[2*x+1];
+                        }
+                        candidates[2*c] = dist;
+                        candidates[2*c+1] = train_matrix[keyIndex*num_attributes + num_attributes - 1]; // class value
+                        break;
+                    }
+                }
+            }
+
+            for(int i = 0; i < k; i++) {
+                classCounts[(int)candidates[2*i+1]] += 1;
+            }
+
+            int max_value = -1;
+            int max_class = 0;
+            for(int i = 0; i < num_classes; i++) {
+                if(classCounts[i] > max_value) {
+                    max_value = classCounts[i];
+                    max_class = i;
+                }
+            }
+
+            predictions[queryIndex] = max_class;
+
+            for(int i = 0; i < 2*k; i++){ candidates[i] = FLT_MAX; }
+            memset(classCounts, 0, num_classes * sizeof(int));
+        }
+        free(candidates);
+        free(classCounts);
+    }
+
+    free(train_matrix);
+    free(test_matrix);
 
     return predictions;
 }
@@ -92,14 +152,8 @@ int main(int argc, char *argv[])
 
     uint64_t time_difference = (1000000000L * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec) / 1e6;
 
-    printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for OpenMP. Accuracy was %.2f\%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, accuracy);
-}
+    printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for OpenMP with %d threads. Accuracy was %.2f%%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, num_threads, accuracy);
 
-/*  // Example to print the test dataset
-    float* test_matrix = test->get_dataset_matrix();
-    for(int i = 0; i < test->num_instances(); i++) {
-        for(int j = 0; j < test->num_attributes(); j++)
-            printf("%.0f, ", test_matrix[i*test->num_attributes() + j]);
-        printf("\n");
-    }
-*/
+    free(predictions);
+    free(confusionMatrix);
+}

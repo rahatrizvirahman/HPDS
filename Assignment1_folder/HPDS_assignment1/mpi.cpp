@@ -19,12 +19,95 @@ float distance(float* instance_A, float* instance_B, int num_attributes) {
 
 // Implements a MPI kNN where for each candidate query an in-place priority queue is maintained to identify the nearest neighbors
 int* KNN(ArffData* train, ArffData* test, int k, int mpi_rank, int mpi_num_processes) {
-    
-    int* predictions = (int*)calloc(test->num_instances(), sizeof(int));
-    
-    /*************************************************************
-    *** Complete this code and return the array of predictions ***
-    **************************************************************/
+
+    int num_classes         = train->num_classes();
+    int num_attributes      = train->num_attributes();
+    int train_num_instances = train->num_instances();
+    int test_num_instances  = test->num_instances();
+
+    // Only rank 0 needs the full array in the end; every rank allocates it
+    // anyway so the return type matches the other versions.
+    int* predictions = (int*)calloc(test_num_instances, sizeof(int));
+
+    // Each rank already parsed its own copy of the data in main(), so nothing
+    // needs to be broadcast here.
+    float* train_matrix = train->get_dataset_matrix();
+    float* test_matrix  = test->get_dataset_matrix();
+
+    // Full partition table on every rank, not just its own slice, since
+    // MPI_Gatherv below needs every rank's count and offset.
+    int* counts = (int*) malloc(mpi_num_processes * sizeof(int));
+    int* displs = (int*) malloc(mpi_num_processes * sizeof(int));
+
+    for(int r = 0; r < mpi_num_processes; r++) {
+        int r_start = (int)(((long) r      * test_num_instances) / mpi_num_processes);
+        int r_end   = (int)(((long)(r + 1) * test_num_instances) / mpi_num_processes);
+        displs[r] = r_start;
+        counts[r] = r_end - r_start;
+    }
+
+    int my_start = displs[mpi_rank];
+    int my_count = counts[mpi_rank];
+
+    // element i here is global test instance my_start + i
+    int* local_predictions = (int*) calloc(my_count > 0 ? my_count : 1, sizeof(int));
+
+    float* candidates = (float*) calloc(k*2, sizeof(float));
+    for(int i = 0; i < 2*k; i++){ candidates[i] = FLT_MAX; }
+    int* classCounts = (int*) calloc(num_classes, sizeof(int));
+
+    for(int i = 0; i < my_count; i++) {
+        int queryIndex = my_start + i;
+
+        for(int keyIndex = 0; keyIndex < train_num_instances; keyIndex++) {
+
+            float dist = distance(&test_matrix[queryIndex*num_attributes], &train_matrix[keyIndex*num_attributes], num_attributes);
+
+            for(int c = 0; c < k; c++){
+                if(dist < candidates[2*c]) {
+                    for(int x = k-2; x >= c; x--) {
+                        candidates[2*x+2] = candidates[2*x];
+                        candidates[2*x+3] = candidates[2*x+1];
+                    }
+                    candidates[2*c] = dist;
+                    candidates[2*c+1] = train_matrix[keyIndex*num_attributes + num_attributes - 1]; // class value
+                    break;
+                }
+            }
+        }
+
+        for(int j = 0; j < k; j++) {
+            classCounts[(int)candidates[2*j+1]] += 1;
+        }
+
+        int max_value = -1;
+        int max_class = 0;
+        for(int j = 0; j < num_classes; j++) {
+            if(classCounts[j] > max_value) {
+                max_value = classCounts[j];
+                max_class = j;
+            }
+        }
+
+        local_predictions[i] = max_class;
+
+        for(int j = 0; j < 2*k; j++){ candidates[j] = FLT_MAX; }
+        memset(classCounts, 0, num_classes * sizeof(int));
+    }
+
+    // Gatherv (not Gather) since blocks can differ by one when the test set
+    // doesn't divide evenly across ranks
+    MPI_Gatherv(local_predictions, my_count, MPI_INT,
+                predictions, counts, displs, MPI_INT,
+                0, MPI_COMM_WORLD);
+
+    free(local_predictions);
+    free(candidates);
+    free(classCounts);
+    free(counts);
+    free(displs);
+    free(train_matrix);
+    free(test_matrix);
 
     return predictions;
 }
@@ -70,7 +153,7 @@ int main(int argc, char *argv[])
     MPI_Comm_rank (MPI_COMM_WORLD, &mpi_rank);
     MPI_Comm_size (MPI_COMM_WORLD, &mpi_num_processes);
 
-    // Open the datasets
+    // Every rank parses its own copy, before the timer starts
     ArffParser parserTrain(argv[1]);
     ArffParser parserTest(argv[2]);
     ArffData *train = parserTrain.parse();
@@ -78,7 +161,11 @@ int main(int argc, char *argv[])
     
     struct timespec start, end;
     int* predictions = NULL;
-    
+
+    // Sync ranks before starting the clock so an early finisher doesn't
+    // count its wait inside MPI_Gatherv as compute time
+    MPI_Barrier(MPI_COMM_WORLD);
+
     // Initialize time measurement
     clock_gettime(CLOCK_MONOTONIC_RAW, &start);
     
@@ -95,7 +182,7 @@ int main(int argc, char *argv[])
 
         uint64_t time_difference = (1000000000L * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec) / 1e6;
 
-        printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for MPI with %d processes. Accuracy was %.2f\%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, accuracy, mpi_num_processes);
+        printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for MPI with %d processes. Accuracy was %.2f%%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, mpi_num_processes, accuracy);
 
         free(confusionMatrix);
     }
@@ -104,12 +191,3 @@ int main(int argc, char *argv[])
 
     MPI_Finalize();
 }
-
-/*  // Example to print the test dataset
-    float* test_matrix = test->get_dataset_matrix();
-    for(int i = 0; i < test->num_instances(); i++) {
-        for(int j = 0; j < test->num_attributes(); j++)
-            printf("%.0f, ", test_matrix[i*test->num_attributes() + j]);
-        printf("\n");
-    }
-*/

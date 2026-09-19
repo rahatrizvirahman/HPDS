@@ -17,15 +17,110 @@ float distance(float* instance_A, float* instance_B, int num_attributes) {
     return sqrt(sum);
 }
 
+// Args for one worker thread (pthread_create only takes a single void*)
+struct KNNArgs {
+    float* train_matrix;
+    float* test_matrix;
+    int num_attributes;
+    int num_classes;
+    int train_num_instances;
+    int k;
+    int start;                  // first test instance owned by this thread
+    int end;                    // one past the last test instance owned
+    int* predictions;
+};
+
+void* KNNWorker(void* arg) {
+    KNNArgs* a = (KNNArgs*) arg;
+
+    int k              = a->k;
+    int num_classes    = a->num_classes;
+    int num_attributes = a->num_attributes;
+
+    // Private per thread, otherwise two threads would race on the same buffer
+    float* candidates = (float*) calloc(k*2, sizeof(float));
+    for(int i = 0; i < 2*k; i++){ candidates[i] = FLT_MAX; }
+    int* classCounts = (int*) calloc(num_classes, sizeof(int));
+
+    for(int queryIndex = a->start; queryIndex < a->end; queryIndex++) {
+        for(int keyIndex = 0; keyIndex < a->train_num_instances; keyIndex++) {
+
+            float dist = distance(&a->test_matrix[queryIndex*num_attributes], &a->train_matrix[keyIndex*num_attributes], num_attributes);
+
+            for(int c = 0; c < k; c++){
+                if(dist < candidates[2*c]) {
+                    for(int x = k-2; x >= c; x--) {
+                        candidates[2*x+2] = candidates[2*x];
+                        candidates[2*x+3] = candidates[2*x+1];
+                    }
+                    candidates[2*c] = dist;
+                    candidates[2*c+1] = a->train_matrix[keyIndex*num_attributes + num_attributes - 1]; // class value
+                    break;
+                }
+            }
+        }
+
+        for(int i = 0; i < k; i++) {
+            classCounts[(int)candidates[2*i+1]] += 1;
+        }
+
+        int max_value = -1;
+        int max_class = 0;
+        for(int i = 0; i < num_classes; i++) {
+            if(classCounts[i] > max_value) {
+                max_value = classCounts[i];
+                max_class = i;
+            }
+        }
+
+        a->predictions[queryIndex] = max_class;
+
+        for(int i = 0; i < 2*k; i++){ candidates[i] = FLT_MAX; }
+        memset(classCounts, 0, num_classes * sizeof(int));
+    }
+
+    free(candidates);
+    free(classCounts);
+    return NULL;
+}
 
 // Implements a threaded kNN where for each candidate query an in-place priority queue is maintained to identify the nearest neighbors
 int* KNN(ArffData* train, ArffData* test, int k, int num_threads) {    
 
-    int* predictions = (int*)calloc(test->num_instances(), sizeof(int));
-    
-    /*************************************************************
-    *** Complete this code and return the array of predictions ***
-    **************************************************************/
+    int test_num_instances = test->num_instances();
+    int* predictions = (int*)calloc(test_num_instances, sizeof(int));
+
+    // get_dataset_matrix() rebuilds the matrix each call, so build it once here
+    float* train_matrix = train->get_dataset_matrix();
+    float* test_matrix  = test->get_dataset_matrix();
+
+    pthread_t* threads = (pthread_t*) malloc(num_threads * sizeof(pthread_t));
+    KNNArgs*   args    = (KNNArgs*)   malloc(num_threads * sizeof(KNNArgs));
+
+    for(int t = 0; t < num_threads; t++) {
+        args[t].train_matrix        = train_matrix;
+        args[t].test_matrix         = test_matrix;
+        args[t].num_attributes      = train->num_attributes();
+        args[t].num_classes         = train->num_classes();
+        args[t].train_num_instances = train->num_instances();
+        args[t].k                   = k;
+        args[t].predictions         = predictions;
+
+        // Contiguous block of test instances per thread
+        args[t].start = (int)(((long) t      * test_num_instances) / num_threads);
+        args[t].end   = (int)(((long)(t + 1) * test_num_instances) / num_threads);
+
+        pthread_create(&threads[t], NULL, KNNWorker, &args[t]);
+    }
+
+    for(int t = 0; t < num_threads; t++) {
+        pthread_join(threads[t], NULL);
+    }
+
+    free(threads);
+    free(args);
+    free(train_matrix);
+    free(test_matrix);
 
     return predictions;
 }
@@ -91,17 +186,8 @@ int main(int argc, char *argv[])
 
     uint64_t time_difference = (1000000000L * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec) / 1e6;
 
-    printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for threaded with %d threads. Accuracy was %.2f\%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, accuracy, num_threads);
+    printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for threaded with %d threads. Accuracy was %.2f%%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, num_threads, accuracy);
 
     free(predictions);
     free(confusionMatrix);
 }
-
-/*  // Example to print the test dataset
-    float* test_matrix = test->get_dataset_matrix();
-    for(int i = 0; i < test->num_instances(); i++) {
-        for(int j = 0; j < test->num_attributes(); j++)
-            printf("%.0f, ", test_matrix[i*test->num_attributes() + j]);
-        printf("\n");
-    }
-*/
