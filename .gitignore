@@ -4,9 +4,6 @@ Assignment1_folder/HPDS_assignment1/threaded
 Assignment1_folder/HPDS_assignment1/openmp
 Assignment1_folder/HPDS_assignment1/mpi
 
-# Generated experiment data (regenerate with run_experiments.sh / submit_all.sh + analyze_results.py)
-Assignment1_folder/HPDS_assignment1/results/
-Assignment1_folder/HPDS_assignment1/slurm/logs/
 
 # LaTeX build output (Overleaf recompiles main.tex; only main.tex/data/ are sources)
 Assignment1_folder/HPDA_Assignment1_overleaf/main.pdf
