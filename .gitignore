@@ -5,8 +5,3 @@ Assignment1_folder/HPDS_assignment1/openmp
 Assignment1_folder/HPDS_assignment1/mpi
 
 
-# LaTeX build output (Overleaf recompiles main.tex; only main.tex/data/ are sources)
-Assignment1_folder/HPDA_Assignment1_overleaf/main.pdf
-Assignment1_folder/HPDA_Assignment1_overleaf/*.aux
-Assignment1_folder/HPDA_Assignment1_overleaf/*.log
-Assignment1_folder/HPDA_Assignment1_overleaf/*.out
