@@ -15,7 +15,10 @@ source ./bench_common.sh
 
 CSV=results/maple.csv
 mkdir -p results
-csv_header > "$CSV"
+# Only write the header if the file doesn't exist yet, so scoping DATASETS to
+# resume a partial sweep (e.g. DATASETS="medium large") appends to prior
+# results instead of wiping them out.
+[ -f "$CSV" ] || csv_header > "$CSV"
 
 echo "Platform: maple  |  k=$K  reps=$REPS"
 echo "Datasets: $DATASETS"
