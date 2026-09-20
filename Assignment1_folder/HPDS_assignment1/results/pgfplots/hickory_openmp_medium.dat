@@ -1,0 +1,5 @@
+workers time_ms speedup_abs speedup_rel parallel_fraction
+1 420.667 0.9937 1.0 nan
+2 244.667 1.7084 1.7193 0.8293
+4 169.333 2.4685 2.4843 0.7932
+6 146.667 2.85 2.8682 0.7789
