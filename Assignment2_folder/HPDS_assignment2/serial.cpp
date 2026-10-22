@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <bits/stdc++.h>
+#include <cfloat>
+#include <cmath>
+#include <cstring>
+#include <chrono>
+#include "knn_io.h"
 #include "libarff/arff_parser.h"
 #include "libarff/arff_data.h"
 
@@ -84,47 +88,24 @@ int* KNN(ArffData* train, ArffData* test, int k) {
         memset(classCounts, 0, num_classes * sizeof(int));
     }
 
+    free(train_matrix);
+    free(test_matrix);
     free(candidates);
     free(classCounts);
     
     return predictions;
 }
 
-int* computeConfusionMatrix(int* predictions, ArffData* dataset)
+int main(int argc, char *argv[]) try
 {
-    int* confusionMatrix = (int*)calloc(dataset->num_classes() * dataset->num_classes(), sizeof(int)); // matrix size numberClasses x numberClasses
-    
-    for(int i = 0; i < dataset->num_instances(); i++) { // for each instance compare the true class and predicted class    
-        int trueClass = dataset->get_instance(i)->get(dataset->num_attributes() - 1)->operator int32();
-        int predictedClass = predictions[i];
-        
-        confusionMatrix[trueClass*dataset->num_classes() + predictedClass]++;
-    }
-    
-    return confusionMatrix;
-}
-
-float computeAccuracy(int* confusionMatrix, ArffData* dataset)
-{
-    int successfulPredictions = 0;
-    
-    for(int i = 0; i < dataset->num_classes(); i++) {
-        successfulPredictions += confusionMatrix[i*dataset->num_classes() + i]; // elements in the diagonal are correct predictions
-    }
-    
-    return 100 * successfulPredictions / (float) dataset->num_instances();
-}
-
-int main(int argc, char *argv[])
-{
-    if(argc != 4)
+    if(argc != 4 && argc != 5)
     {
-        printf("Usage: ./program datasets/train.arff datasets/test.arff k");
-        exit(0);
+        fprintf(stderr, "Usage: ./serial train.arff test.arff k [predictions.txt]\n");
+        return 1;
     }
 
     // k value for the k-nearest neighbors
-    int k = strtol(argv[3], NULL, 10);
+    int k = positive_integer(argv[3]);
 
     // Open the datasets
     ArffParser parserTrain(argv[1]);
@@ -132,35 +113,31 @@ int main(int argc, char *argv[])
     ArffData *train = parserTrain.parse();
     ArffData *test = parserTest.parse();
     
-    struct timespec start, end;
+    validate_datasets(train, test, k);
     int* predictions = NULL;
     
     // Initialize time measurement
-    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+    auto start = std::chrono::steady_clock::now();
     
     predictions = KNN(train, test, k);
     
     // Stop time measurement
-    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+    auto end = std::chrono::steady_clock::now();
 
-    // Compute the confusion matrix
-    int* confusionMatrix = computeConfusionMatrix(predictions, test);
-    // Calculate the accuracy
-    float accuracy = computeAccuracy(confusionMatrix, test);
+    int correct = 0;
+    for (int row = 0; row < test->num_instances(); ++row)
+        if (predictions[row] == test->get_instance(row)->get(test->num_attributes() - 1)->operator int32())
+            ++correct;
+    float accuracy = 100.0f * correct / test->num_instances();
+    if (argc == 5) write_predictions(argv[4], predictions, test->num_instances());
 
-    uint64_t time_difference = (1000000000L * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec) / 1e6;
-
-    printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for single-thread. Accuracy was %.2f\%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, accuracy);
+    double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
+    printf("The %d-NN classifier required %.6f ms. Accuracy was %.2f%%\n", k, time_ms, accuracy);
+    printf("RESULT strategy=serial end_to_end_ms=%.6f accuracy=%.8f\n", time_ms, accuracy);
 
     free(predictions);
-    free(confusionMatrix);
 }
-
-/*  // Example to print the test dataset
-    float* test_matrix = test->get_dataset_matrix();
-    for(int i = 0; i < test->num_instances(); i++) {
-        for(int j = 0; j < test->num_attributes(); j++)
-            printf("%.0f, ", test_matrix[i*test->num_attributes() + j]);
-        printf("\n");
-    }
-*/
+ catch (const std::exception& error) {
+    fprintf(stderr, "%s\n", error.what());
+    return 1;
+}

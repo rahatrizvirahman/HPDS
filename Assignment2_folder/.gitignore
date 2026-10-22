@@ -1,0 +1,9 @@
+HPDS_assignment2/serial
+HPDS_assignment2/cuda
+HPDS_assignment2/threaded
+HPDS_assignment2/openmp
+HPDS_assignment2/mpi
+HPDS_assignment2/mpi_cuda
+HPDS_assignment2/results/
+HPDS_assignment2/slurm/logs/
+__pycache__/

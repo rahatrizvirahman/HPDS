@@ -1,11 +1,25 @@
-all: serial threaded openmp mpi
-serial: serial.cpp
-	g++ -std=c++11 -o serial serial.cpp -I libarff libarff/arff_attr.cpp libarff/arff_data.cpp libarff/arff_instance.cpp libarff/arff_lexer.cpp libarff/arff_parser.cpp libarff/arff_scanner.cpp libarff/arff_token.cpp libarff/arff_utils.cpp libarff/arff_value.cpp
-threaded: threaded.cpp
-	g++ -pthread -std=c++11 -o threaded threaded.cpp -I libarff libarff/arff_attr.cpp libarff/arff_data.cpp libarff/arff_instance.cpp libarff/arff_lexer.cpp libarff/arff_parser.cpp libarff/arff_scanner.cpp libarff/arff_token.cpp libarff/arff_utils.cpp libarff/arff_value.cpp
-openmp: openmp.cpp
-	g++ -fopenmp -std=c++11 -o openmp openmp.cpp -I libarff libarff/arff_attr.cpp libarff/arff_data.cpp libarff/arff_instance.cpp libarff/arff_lexer.cpp libarff/arff_parser.cpp libarff/arff_scanner.cpp libarff/arff_token.cpp libarff/arff_utils.cpp libarff/arff_value.cpp
-mpi: mpi.cpp
-	mpicxx -std=gnu++11 -o mpi mpi.cpp -I libarff libarff/arff_attr.cpp libarff/arff_data.cpp libarff/arff_instance.cpp libarff/arff_lexer.cpp libarff/arff_parser.cpp libarff/arff_scanner.cpp libarff/arff_token.cpp libarff/arff_utils.cpp libarff/arff_value.cpp
+CXX = g++
+NVCC ?= nvcc
+MPICXX ?= mpicxx
+CXXFLAGS ?= -O2 -std=c++11 -ffp-contract=off
+NVCCFLAGS ?= -O2 -std=c++11 --fmad=false
+CPPFLAGS ?= -I libarff
+ARFF_SOURCES := $(wildcard libarff/*.cpp)
+ARFF_HEADERS := $(wildcard libarff/*.h)
+
+.PHONY: all cpu clean
+all: serial cuda
+cpu: serial threaded openmp mpi
+
+serial: serial.cpp knn_io.h $(ARFF_SOURCES) $(ARFF_HEADERS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) serial.cpp $(ARFF_SOURCES) -o $@
+cuda: cuda.cu knn_io.h $(ARFF_SOURCES) $(ARFF_HEADERS)
+	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) cuda.cu $(ARFF_SOURCES) -o $@
+threaded: threaded.cpp $(ARFF_SOURCES) $(ARFF_HEADERS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -pthread threaded.cpp $(ARFF_SOURCES) -o $@
+openmp: openmp.cpp $(ARFF_SOURCES) $(ARFF_HEADERS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -fopenmp openmp.cpp $(ARFF_SOURCES) -o $@
+mpi: mpi.cpp $(ARFF_SOURCES) $(ARFF_HEADERS)
+	$(MPICXX) $(CPPFLAGS) $(CXXFLAGS) mpi.cpp $(ARFF_SOURCES) -o $@
 clean:
-	rm serial threaded openmp mpi
+	rm -f serial cuda threaded openmp mpi

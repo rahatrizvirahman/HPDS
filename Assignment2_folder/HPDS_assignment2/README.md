@@ -1,194 +1,107 @@
-# HPDS Assignment 1: KNN with threads, OpenMP, and MPI
+# Assignment 2 CUDA baseline
 
-Serial, pthreads, OpenMP, and MPI implementations of k-nearest-neighbor
-classification, plus the scripts used to benchmark them on `maple.cs.vcu.edu`
-and `athena.hprc.vcu.edu`.
+This is the first implementation milestone. It contains a serial reference and a single-GPU CUDA baseline. The shared-memory strategy, MPI+CUDA implementation, full CPU comparison sweep, and Overleaf report remain planned work in [ASSIGNMENT2_PLAN.md](../ASSIGNMENT2_PLAN.md).
 
-All four programs partition work the same way: each worker (thread, or MPI
-rank) takes a contiguous block of **test** instances and scans the full
-training set for each one, exactly as `serial.cpp` does. This keeps every
-worker's arithmetic identical to the serial version in the same order, so
-predictions match the serial output exactly at every worker count. See
-`Assignment1_folder/Explanations/` for the full reasoning behind this and
-every other design decision.
+The supplied datasets and parser are unchanged. Historical Assignment 1 results, scripts, and report are preserved in [Reference_assignment1](../Reference_assignment1/). They are not Assignment 2 results.
 
-## Files
+## Clone and inspect each cluster
 
-| Path | Purpose |
-|---|---|
-| `serial.cpp`, `threaded.cpp`, `openmp.cpp`, `mpi.cpp` | The four implementations |
-| `libarff/` | Provided ARFF file parser, unmodified |
-| `datasets/` | small / medium / large train and test ARFF files |
-| `Makefile` | Builds all four binaries |
-| `verify_accuracy.sh` | Confirms every implementation matches the serial accuracy |
-| `run_experiments.sh`, `bench_common.sh` | Benchmark sweep for maple |
-| `slurm/` | Slurm scripts and submission driver for Athena, plus hickory variants and `collect_hickory_results.py` |
-| `analyze_results.py` | Averages repetitions, computes speedup and parallel-fraction tables/figures |
-| `results/` | CSVs and generated figure data (created by the scripts above) |
-
-## 1. Build
+Run these commands on both Maple and Athena. If a checkout already exists, use `git pull --ff-only` from that checkout instead of cloning again.
 
 ```bash
-make            # builds serial, threaded, openmp, mpi
-make clean      # removes the four binaries
+git clone https://github.com/rahatrizvirahman/HPDS.git
+cd HPDS/Assignment2_folder/HPDS_assignment2
+mkdir -p results slurm/logs
+bash slurm/inspect_cluster.sh 2>&1 | tee "results/cluster-$(hostname).txt"
 ```
 
-## 2. Verify correctness (do this before any timed run)
+Send the two cluster inspection files back before finalizing the GPU submission commands. The script queries Slurm and module availability without launching computation. A login node need not expose a GPU or have `nvcc` loaded. Missing GPU visibility on a login node is not a failed GPU test.
+
+We need the GPU partition, allocation syntax, available CUDA/compiler modules, any account/QOS requirement, and the GPU counts allowed per job. The script prints readable account and QOS information where available. Administrator restrictions or site instructions may still need to supply missing limits.
+
+## Build and first verification job
+
+The Makefile builds `serial` and `cuda` by default. It requires a C++ compiler and NVIDIA's `nvcc`. It does not require MPI for this milestone. The Slurm job rebuilds both programs inside the allocation, records the compiler versions and GPU information, and runs correctness checks.
+
+After confirming the cluster settings, load its actual compiler/CUDA modules and submit the job. The following is a template. Replace the partition and, if required by the site, the GPU request with the verified values. Add the actual account and QOS options if required.
 
 ```bash
-./verify_accuracy.sh                    # k=3, worker counts 1 2 4 8 16
-./verify_accuracy.sh 3 1 2 4 8 16 32 64 128   # full worker-count sweep
+# Run from HPDS/Assignment2_folder/HPDS_assignment2.
+# Load the verified compiler and CUDA modules in this shell first.
+mkdir -p slurm/logs
+sbatch --partition=REPLACE_WITH_GPU_PARTITION --gres=gpu:1 \
+  --output=slurm/logs/baseline-%j.log \
+  slurm/baseline_job.sh verify
+squeue -u "$USER"
 ```
 
-This runs every implementation against every dataset and checks the reported
-accuracy against `./serial`'s accuracy. It must print `ALL ACCURACIES MATCH
-SERIAL` before you trust any timing result. If it does not, the code has a
-race or an indexing bug: fix that first, since the assignment is graded in
-part on exact accuracy match.
+`MODULES` can also specify a space-separated list of actual module names to load inside the job. No guessed cluster module names or GPU types are embedded in the script. The same job body supports either cluster through its submission options.
 
-## 3. Run the benchmark sweep on maple
+For an initial small-data check, export the selection before submitting.
 
 ```bash
-./run_experiments.sh
+export DATASETS=small BLOCK_SIZES='64 128 256'
+# Submit the verified sbatch command above.
 ```
 
-Defaults to k=3, 3 repetitions, all three datasets, worker counts
-1 2 4 8 16 32 64 128. Override any of these with environment variables:
+For the full verification run, unset those overrides or set all three datasets. GPU jobs must run through Slurm allocations, not directly on login nodes. A successful job prints `ALL PREDICTIONS MATCH SERIAL`. A build failure or mismatch produces a nonzero job exit and retains the Slurm log.
+
+## Program interfaces
+
+Within a GPU allocation, the individual interfaces are as follows.
 
 ```bash
-REPS=1 DATASETS="small" WORKER_COUNTS="1 2 4" ./run_experiments.sh
+./serial datasets/small-train.arff datasets/small-test.arff 3 serial-predictions.txt
+./cuda datasets/small-train.arff datasets/small-test.arff 3 128 cuda-predictions.txt
 ```
 
-Writes `results/maple.csv` with one row per (version, dataset, workers, rep).
+The final prediction-file argument is optional. It writes one integer class per test row. `k` must be positive and no larger than the training set. CUDA block size must be positive and fit the GPU. Device 0 means the first GPU visible inside the assigned Slurm task, not necessarily physical GPU 0 on the host.
 
-## 4. Run on Athena
+`verify_accuracy.sh` first runs synthetic cases for neighbor ties, class-vote ties, several `k` values, invalid arguments, and partially occupied blocks. It then compares full prediction files against serial for each dataset and block size. Matching aggregate accuracy alone is insufficient.
 
-Copy this whole folder (code, `datasets/`, `Makefile`, `slurm/`) to Athena and
-`make` there. Every run goes through the one script `slurm/knn_job.sh`; which
-program runs and how many CPUs/nodes it gets are chosen by the `sbatch` flags,
-not by separate scripts, since a single Slurm job's resource reservation is
-fixed for its whole run and can't grow from 1 CPU to 128 CPUs partway through.
-That's also why "run the whole sweep" here means submitting many small jobs,
-one per configuration, rather than one big job that loops internally.
+The serial KNN scan and insertion algorithm remain the Assignment 1 reference. Changes add portable standard headers, input checks, optional prediction output, fractional timing, and release of flattened input buffers. Accuracy is counted directly from predictions so test sets may omit a training class without indexing outside a confusion matrix.
+
+## Baseline measurements after correctness passes
+
+Use the same verified resource options and submit the job with `benchmark` instead of `verify`.
 
 ```bash
-./slurm/submit_all.sh
+export DATASETS='small medium large' BLOCK_SIZES='64 128 256' REPS=3 K=3
+# Use the confirmed partition/account/GPU options for this cluster.
+sbatch --partition=REPLACE_WITH_GPU_PARTITION --gres=gpu:1 \
+  --output=slurm/logs/baseline-%j.log \
+  slurm/baseline_job.sh benchmark
 ```
 
-submits the entire sweep for you: every dataset, every worker count 1 through
-128, 3 repetitions each, and both the single-node and multi-node MPI variants
-(~288 jobs with the defaults). It returns immediately after submitting; it
-does not wait for the jobs to finish. Track progress with `squeue -u $USER`
-and let the queue drain before moving on to analysis. Shrink it for a quick
-check with the same override variables as `run_experiments.sh`:
+The benchmark records three serial runs per dataset and three CUDA runs per dataset/block size. Every measured prediction file is compared against the serial reference. Each invocation creates a unique directory under `results/baseline-*` containing raw CSV measurements, per-run logs and predictions, metadata, and a summary of average/minimum/maximum time and speedup. A failed run stops the script and preserves diagnostic artifacts. A summary is written only after the requested sweep completes.
+
+Use `REPS=1 DATASETS=small` for a short trial, not final report evidence. The job defaults to 30 minutes and 4 GB of host memory. Adjust those requests after inspecting the system and measuring the first job. Record timeouts rather than treating incomplete runs as successful measurements.
+
+Each measured run launches a fresh process without an explicit warm-up. End-to-end classification time includes flattening matrices, allocation, transfers, GPU work, and workspace cleanup. It excludes ARFF parsing, validation, device discovery, accuracy calculation, and prediction-file output. The returned prediction buffer remains alive at the end of both CPU and GPU timers. GPU kernel time is measured separately with synchronized CUDA events. The headline speedup divides serial classification time by GPU end-to-end classification time.
+
+The default CPU flags use `-O2 -ffp-contract=off`. CUDA uses `-O2 --fmad=false` to retain separate multiply/add rounding in the distance loop. Neither build uses fast math. These settings support reproducibility but still require prediction checks on each system. Old Assignment 1 timings used different build settings and must not be mixed into these speedups.
+
+Preserve the Slurm log with the result directory. It records hardware, compiler versions, and the actual build commands. To return the artifacts after jobs finish, create a uniquely named archive inside Assignment 2 and download it using your normal file-transfer workflow.
 
 ```bash
-REPS=1 DATASETS="small" WORKER_COUNTS="1 2 4" ./slurm/submit_all.sh
+tar -czf "results/baseline-artifacts-$(hostname)-$(date +%Y%m%dT%H%M%S).tar.gz" \
+  results/cluster-*.txt results/baseline-*/ slurm/logs/
 ```
 
-Each `.log` file lands in `slurm/logs/` and contains the same "required NNN
-ms ... Accuracy was NN.NN%" line the program prints on maple, plus a "nodes
-used: N" line so you can confirm the 1-node vs multi-node MPI runs actually
-landed on different node counts.
+Only run that archive command after the inspection and benchmark outputs exist. Logs, generated results, and binaries are ignored by Git. Send the archive for review instead of assuming a normal Git push will include them.
 
-`knn_job.sh` targets the `cpu-large` partition, which only contains AMD nodes
-of similar age, so runtimes across reps stay comparable instead of drifting
-because two reps happened to land on nodes of very different ages. If you
-ever call `sbatch` on it directly instead of through `submit_all.sh`, don't
-pass `--ntasks` and `--ntasks-per-node` in the same command; use one or the
-other. `--nodes` with `--ntasks` is fine, and is what `submit_all.sh` uses.
+## Local checks and next milestone
 
-## 5. Run on hickory
-
-hickory.cs.vcu.edu is a different cluster from Athena, with real constraints
-that limit how much of the sweep is possible there. `slurm/knn_job_hickory.sh`
-and `slurm/submit_all_hickory.sh` are hickory-specific copies of the Athena
-scripts (`slurm/knn_job.sh` and `slurm/submit_all.sh` are untouched and stay
-Athena-only); use whichever pair matches the cluster you're on. What follows
-was measured directly on hickory, not assumed from Athena:
-
-- **One node only.** `sinfo -N` / `sinfo -s` show hickory's only partition
-  (`gpu`, not `cpu-large`) contains exactly one node, `hickory` itself. There
-  is no second node to place a multi-node MPI run on, so the `--nodes=2`
-  comparison from the Athena sweep does not exist on hickory;
-  `submit_all_hickory.sh` drops it entirely rather than skipping it at
-  worker count 1.
-- **Fewer usable CPUs than they look.** The node reports 24 CPUs, but
-  `scontrol show node hickory` shows `CoreSpecCount=6` reserved outside
-  Slurm's scheduler and `CfgTRES=cpu=18`, so only 18 cores are actually
-  schedulable, shared with whatever else is running on the box at the time.
-- **A low per-job CPU ceiling.** `sacctmgr show qos` shows QOS `short` caps a
-  single job at `MaxCPUs=6` and QOS `long` (this account's default QOS) caps
-  it at 3. `knn_job_hickory.sh` requests `--qos=short` explicitly so worker
-  counts up to 6 are usable, and `submit_all_hickory.sh` defaults
-  `WORKER_COUNTS` to `1 2 4 6` instead of Athena's `1 2 4 8 16 32 64 128`.
-- **A tight submission cap.** `sacctmgr show assoc user=$USER` shows this
-  account limited to `MaxSubmitJobs=2` / `MaxJobs=2`, i.e. at most 2 jobs may
-  sit in the queue (pending or running) at once. Athena's `submit_all.sh`
-  submits the whole sweep up front and lets Slurm queue the rest;
-  `submit_all_hickory.sh` cannot do that (extra `sbatch` calls are rejected
-  outright), so it submits one job at a time and polls `squeue -u $USER`,
-  submitting the next job only once a slot frees up. This makes the hickory
-  sweep much slower wall-clock-wise than the Athena one, even though each
-  individual job is short.
-- **GPU GRES is mandatory even for CPU-only jobs.** hickory's partition is a
-  GPU partition with a Slurm job-submit policy that rejects any job with no
-  GRES request. `knn_job_hickory.sh` requests the smallest GPU type at count
-  1 (`--gres=gpu:40g:1`) purely to satisfy that policy; none of these four
-  programs touch the GPU.
-- **Different MPI module name.** `module avail mpi` lists `openmpi/4.1` on
-  hickory, not Athena's `mpi/openmpi-4.1.6`.
+The serial code and synthetic tests can run without CUDA.
 
 ```bash
-./slurm/submit_all_hickory.sh
-REPS=1 DATASETS="small" WORKER_COUNTS="1" ./slurm/submit_all_hickory.sh   # quick smoke test
+make serial
+python3 tests/check_predictions.py
+python3 tests/test_benchmark.py
 ```
 
-Logs land in `slurm/logs/` with a `_hickory` suffix (e.g.
-`threaded_small_4_rep1_hickory.log`) so they can sit alongside any Athena
-logs without colliding. Once the sweep finishes, build `results/hickory.csv`
-from those logs with:
+`make cpu` retains optional pthreads, OpenMP, and MPI targets for later CPU comparisons. Those inherited programs need their respective compiler support and are not exercised by the baseline GPU job.
 
-```bash
-python3 slurm/collect_hickory_results.py
-```
+Personal explanations are in [Explanations](../Explanations/). After successful cluster verification, the next implementation steps are shared-memory reuse and MPI+CUDA. No speedup claim is made until actual GPU results are available.
 
-which writes the same 8-column format `bench_common.sh` writes for maple, so
-it drops straight into `analyze_results.py`:
-
-```bash
-python3 analyze_results.py --inputs results/maple.csv results/hickory.csv
-```
-
-## 6. Compute speedup and averages
-
-Pull the runtime out of each `.log` file and average the 3 repetitions.
-This can be done by hand from the printed lines, or with a short `grep`:
-
-```bash
-grep -h "required" slurm/logs/threaded_small_8_rep*.log
-```
-
-`analyze_results.py` (optional) automates the averaging plus the absolute
-and relative speedup and Karp-Flatt parallel-fraction numbers described in
-`Assignment1_folder/Explanations/00-overview-and-decomposition.md`, if you
-would rather not compute those by hand for every row of the report tables.
-It reads `results/maple.csv` directly, since `run_experiments.sh` writes it.
-There is no script that builds a matching `results/athena.csv` from the
-Slurm `.log` files (`submit_all.sh` only submits jobs, it does not collect
-their results into a CSV), so for Athena either add
-rows to a CSV by hand in the same 8-column format `bench_common.sh` writes
-for maple (see its `csv_header` line), or just average the `.log` numbers
-directly for the report tables. hickory does have such a collector,
-`slurm/collect_hickory_results.py` (see section 5), since its `.log` files
-are named consistently enough (`_hickory` suffix) to parse automatically.
-
-## Notes
-
-- k defaults to 3 everywhere, matching the assignment. Pass a different `k`
-  as the third command-line argument to any binary, or via the `K`
-  environment variable to the scripts above.
-- `serial.cpp` and the parser in `libarff/` are unmodified from the provided
-  template.
-- Develop and debug on maple; only run the full Athena sweep once
-  `verify_accuracy.sh` passes cleanly on maple.
+See [VALIDATION.md](VALIDATION.md) for completed local checks and the remaining cluster checks.
