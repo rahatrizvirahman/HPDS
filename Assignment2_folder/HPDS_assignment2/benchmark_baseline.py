@@ -13,6 +13,16 @@ import tempfile
 ROOT = Path(__file__).resolve().parent
 
 
+def results_root():
+    """Output root from RESULTS_ROOT, relative to this directory unless absolute. Default is results."""
+    return (ROOT / os.environ.get("RESULTS_ROOT", "results")).resolve()
+
+
+def results_root():
+    """Output root from RESULTS_ROOT, relative to this directory unless absolute. Defaults to results."""
+    return ROOT / os.environ.get("RESULTS_ROOT", "results")
+
+
 def positive(value):
     result = int(value)
     if result < 1:
@@ -47,15 +57,17 @@ def main():
     blocks = [positive(v) for v in os.environ.get("BLOCK_SIZES", "64 128 256").split()]
     if not datasets or not blocks or any(d not in ("small", "medium", "large") for d in datasets):
         raise ValueError("Select known datasets and at least one block size")
-    (ROOT / "results").mkdir(exist_ok=True)
+    output = results_root()
+    output.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    destination = Path(tempfile.mkdtemp(prefix=f"baseline-{stamp}-", dir=ROOT / "results"))
+    run_id = os.environ.get("RUN_ID", "")
+    destination = Path(tempfile.mkdtemp(prefix=f"baseline-{stamp}-{run_id + '-' if run_id else ''}", dir=output))
     print(f"Results directory {destination}", flush=True)
     revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     (destination / "metadata.txt").write_text(
         f"host={socket.gethostname()}\ncommit={revision.stdout.strip()}\n"
-        f"slurm_job={os.environ.get('SLURM_JOB_ID', '')}\n"
+        f"slurm_job={os.environ.get('SLURM_JOB_ID', '')}\nrun_id={run_id}\n"
         f"k={k}\nrepetitions={repetitions}\nblock_sizes={blocks}\n"
         "warmup=none\nEach measurement launches a fresh process.\n"
         "Preserve the Slurm log for GPU model, compiler versions, and build flags.\n")

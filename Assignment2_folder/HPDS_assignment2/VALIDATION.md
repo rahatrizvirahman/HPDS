@@ -23,3 +23,7 @@ Record each system's successful build and verification log before collecting rep
 ## Maple validation completed October 22, 2026
 
 The earlier unvalidated status above describes the local authoring environment. Maple jobs 1470, 1471, and 1472 all completed with exit code 0:0. CUDA built successfully with CUDA 12.3 and GCC 11.4 on a GTX 1080 Ti. Synthetic checks and exact predictions passed for all datasets at k=3 and blocks 64, 128, and 256. All 36 benchmark prediction files matched serial. See [Maple baseline results](../MAPLE_BASELINE_RESULTS.md) for measurements, settings, changes, and artifact paths. Athena, shared memory, and MPI+CUDA remain unvalidated.
+
+## Athena validation completed October 22, 2026
+
+Athena jobs 3382502 (small), 3382504 (all datasets) and 3382505 (benchmark) completed with exit code 0:0 on an A100-SXM4-80GB with CUDA 12.3. Synthetic checks and complete prediction files matched serial for every dataset at k=3 and blocks 64, 128 and 256, and all 36 benchmark predictions matched. See [Athena baseline results](../ATHENA_BASELINE_RESULTS.md). Shared memory and MPI+CUDA remain unvalidated.

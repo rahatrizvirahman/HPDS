@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / os.environ.get("RESULTS_ROOT", "results")
 spec = importlib.util.spec_from_file_location("benchmark", ROOT / "benchmark_baseline.py")
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
@@ -19,8 +20,8 @@ spec.loader.exec_module(benchmark)
 
 class BenchmarkTests(unittest.TestCase):
     def test_result_parser_rejects_failed_missing_and_invalid_results(self):
-        (ROOT / "results").mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=ROOT / "results") as folder:
+        OUTPUT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=OUTPUT) as folder:
             log = Path(folder) / "process.log"
             programs = [
                 "raise SystemExit(1)",
@@ -36,9 +37,9 @@ class BenchmarkTests(unittest.TestCase):
             self.assertTrue(log.exists())
 
     def test_summary_and_prediction_failure(self):
-        (ROOT / "results").mkdir(exist_ok=True)
+        OUTPUT.mkdir(parents=True, exist_ok=True)
         for mismatch in (False, True):
-            with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory(dir=ROOT / "results") as folder:
+            with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory(dir=OUTPUT) as folder:
                 root = Path(folder).resolve()
 
                 def fake_run(command, log):
@@ -49,7 +50,7 @@ class BenchmarkTests(unittest.TestCase):
                             "accuracy": "100", **({"kernel_ms": "1"} if gpu else {})}
 
                 with patch.object(benchmark, "ROOT", root), patch.object(benchmark, "run", fake_run), \
-                        patch.dict(os.environ, {"K": "3", "REPS": "3", "DATASETS": "small", "BLOCK_SIZES": "64"}), \
+                        patch.dict(os.environ, {"K": "3", "REPS": "3", "DATASETS": "small", "BLOCK_SIZES": "64", "RESULTS_ROOT": "results"}), \
                         contextlib.redirect_stdout(io.StringIO()):
                     if mismatch:
                         with self.assertRaisesRegex(ValueError, "Prediction mismatch"):

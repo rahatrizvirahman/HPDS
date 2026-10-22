@@ -2,6 +2,7 @@
 """Exercise neighbor ties, vote ties, runtime k, and partial query blocks."""
 import argparse
 import contextlib
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,8 +14,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cuda", action="store_true", help="Also exercise the actual CUDA executable")
     args = parser.parse_args()
-    (ROOT / "results").mkdir(exist_ok=True)
-    with contextlib.nullcontext(tempfile.mkdtemp(prefix="correctness-", dir=ROOT / "results")) as scratch:
+    output = ROOT / os.environ.get("RESULTS_ROOT", "results")
+    output.mkdir(parents=True, exist_ok=True)
+    run_id = os.environ.get("RUN_ID", "")
+    with contextlib.nullcontext(tempfile.mkdtemp(prefix=f"correctness-{run_id + '.' if run_id else ''}", dir=output)) as scratch:
         folder = Path(scratch)
         header = "@relation ties\n@attribute feature numeric\n@attribute class numeric\n@data\n"
         train, test, output = (folder / name for name in ("train.arff", "test.arff", "predictions.txt"))

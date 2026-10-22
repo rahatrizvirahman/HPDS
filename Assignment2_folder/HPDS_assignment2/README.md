@@ -144,3 +144,33 @@ Open `HPDS_assignment2/results/maple-baseline-evidence-20261022/README.md`. The 
 The packaging script `tools/package_maple_results.py` copies existing evidence and verifies all 36 measured predictions and archived file digests. It omits binaries, Python caches, and empty compiler temporary directories. It refuses to overwrite an existing bundle. It does not rerun the workload or change measurements.
 
 Slurm already writes benchmark output directly into a unique results directory. The additional top-level working files came from discovery and separate verification jobs. Use the grouped bundle for transfer and analysis; retain the original evidence for traceability.
+
+## Verified Athena workflow, October 22, 2026
+
+Athena settings were discovered separately and do not reuse Maple or Hickory values. Slurm is 23.11.10. GPU partitions are `gpu-v100`, `gpu-a100`, `gpu-h100` and the combined `gpu`. A GPU is requested with `--gres=gpu:1`. QOS `normal` is the only QOS for this user, and no `--account` option was needed. The only limits found for the QOS are per-user aggregates of 13 GPUs, 200 running jobs and 1200 CPUs. Partitions report no wall-time limit.
+
+The login node has no `nvcc` and no GPU. CUDA is a module that appears on GPU nodes, with versions `cuda/12.3`, `cuda/12.9` and `cuda/13.2`. The baseline uses `cuda/12.3` with the node's default `g++` 11.4.1. The sweep ran on an NVIDIA A100-SXM4-80GB (compute capability 8.0, driver 595.91.07). An H100 80GB node (athena531) also exists. A V100 discovery job stayed pending and was cancelled, so no V100 information was collected. GPU counts for later work are 8 A100 GPUs (athena521 and athena522, 4 each), 20 H100 GPUs (athena531 has 8, athena532 to athena534 have 4 each) and V100 nodes with 2 GPUs each (athena512 to athena514 are listed by sinfo). Multi-node runs therefore look possible, but they have not been tried. Only one GPU was requested for this baseline.
+
+All Athena output goes to `results/athena/` and `slurm/logs/athena/`. The scripts accept `RESULTS_ROOT` (default `results`, relative to this directory) and `RUN_ID` (default empty, or `job<ID>` when `RESULTS_ROOT` is set). Maple defaults are unchanged. The submit script builds with an explicit `-gencode arch=compute_80,code=sm_80` so that no PTX compilation occurs inside the first timed kernel launch. The other flags are unchanged (`-O2 -std=c++11 --fmad=false`).
+
+Run from this directory. Each command below is run only after the previous job has completed with exit code 0:0.
+
+```bash
+bash slurm/athena/submit_athena.sh small      # build and small-dataset verification
+bash slurm/athena/submit_athena.sh verify     # all datasets, synthetic cases, blocks 64 128 256
+bash slurm/athena/submit_athena.sh benchmark  # 9 serial and 27 CUDA measurements
+bash slurm/athena/monitor_athena.sh JOBID [JOBID ...]
+```
+
+Each script prints the job ID and appends the exact `sbatch` arguments to `results/athena/submissions.txt`. The underlying command is the following.
+
+```bash
+MODULES='cuda/12.3' RESULTS_ROOT=results/athena K=3 BLOCK_SIZES='64 128 256' DATASETS='small medium large' REPS=3 \
+NVCCFLAGS='-O2 -std=c++11 --fmad=false -gencode arch=compute_80,code=sm_80' \
+sbatch --parsable --partition=gpu-a100 --qos=normal --gres=gpu:1 --nodes=1 --ntasks=1 --cpus-per-task=1 \
+  --job-name=athena-benchmark --time=00:30:00 --output=slurm/logs/athena/baseline-%j.log slurm/baseline_job.sh benchmark
+squeue -u "$USER"
+sacct -X -j JOBID --format=JobID,State,ExitCode,Elapsed,AllocTRES%60
+```
+
+After the benchmark, `python3 -I tools/audit_athena_results.py results/athena/baseline-DIRECTORY JOB1 JOB2 JOB3` recomputes counts, prediction comparisons, log agreement, summaries and Slurm states. See [ATHENA_BASELINE_RESULTS.md](../ATHENA_BASELINE_RESULTS.md) for results. The evidence archive is `../athena-baseline-evidence-20261022.tar.gz`, built by `tools/package_athena_results.py`.

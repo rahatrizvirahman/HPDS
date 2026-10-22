@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
+# RESULTS_ROOT (default results) and RUN_ID select where evidence is written.
+results_root=${RESULTS_ROOT:-results}
+run_id=${RUN_ID:+$RUN_ID.}
 python3 tests/check_predictions.py --cuda
 k=${K:-3}
 read -r -a datasets <<< "${DATASETS:-small medium large}"
 read -r -a blocks <<< "${BLOCK_SIZES:-64 128 256}"
 if ((${#datasets[@]} == 0 || ${#blocks[@]} == 0)); then exit 1; fi
-mkdir -p results
-scratch=$(mktemp -d results/verify.XXXXXX)
+mkdir -p "$results_root"
+scratch=$(mktemp -d "$results_root/verify.${run_id}XXXXXX")
 echo "Verification artifacts $scratch"
 for dataset in "${datasets[@]}"; do
     case "$dataset" in small|medium|large) ;; *) echo "Unknown dataset $dataset" >&2; exit 1;; esac

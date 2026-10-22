@@ -18,11 +18,16 @@ if [[ -n ${MODULES:-} ]]; then
     read -r -a requested_modules <<< "$MODULES"
     module load "${requested_modules[@]}"
 fi
-mkdir -p results
-export TMPDIR="$PWD/results/tmp-$SLURM_JOB_ID"
+# RESULTS_ROOT (default results) selects the output root. A chosen root also gets a per-job RUN_ID.
+if [[ -n ${RESULTS_ROOT:-} && -z ${RUN_ID:-} ]]; then export RUN_ID="job$SLURM_JOB_ID"; fi
+results_root=${RESULTS_ROOT:-results}
+export RESULTS_ROOT="$results_root"
+mkdir -p "$results_root"
+export TMPDIR="$PWD/$results_root/tmp-$SLURM_JOB_ID"
 mkdir -p "$TMPDIR"
 git rev-parse HEAD
-git diff -- . > "results/job-$SLURM_JOB_ID.patch"
+git status --short > "$results_root/job-$SLURM_JOB_ID.status.txt"
+git diff -- . > "$results_root/job-$SLURM_JOB_ID.patch"
 module list 2>&1
 lscpu
 hostname
