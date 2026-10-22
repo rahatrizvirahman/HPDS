@@ -8,17 +8,17 @@ read -r -a blocks <<< "${BLOCK_SIZES:-64 128 256}"
 if ((${#datasets[@]} == 0 || ${#blocks[@]} == 0)); then exit 1; fi
 mkdir -p results
 scratch=$(mktemp -d results/verify.XXXXXX)
-trap 'rm -rf "$scratch"' EXIT
+echo "Verification artifacts $scratch"
 for dataset in "${datasets[@]}"; do
     case "$dataset" in small|medium|large) ;; *) echo "Unknown dataset $dataset" >&2; exit 1;; esac
-    ./serial "datasets/$dataset-train.arff" "datasets/$dataset-test.arff" "$k" "$scratch/serial.txt"
-    test -s "$scratch/serial.txt"
+    ./serial "datasets/$dataset-train.arff" "datasets/$dataset-test.arff" "$k" "$scratch/$dataset-serial.txt"
+    test -s "$scratch/$dataset-serial.txt"
     for block in "${blocks[@]}"; do
-        ./cuda "datasets/$dataset-train.arff" "datasets/$dataset-test.arff" "$k" "$block" "$scratch/cuda.txt"
-        test -s "$scratch/cuda.txt"
-        if ! cmp -s "$scratch/serial.txt" "$scratch/cuda.txt"; then
+        ./cuda "datasets/$dataset-train.arff" "datasets/$dataset-test.arff" "$k" "$block" "$scratch/$dataset-cuda-b$block.txt"
+        test -s "$scratch/$dataset-cuda-b$block.txt"
+        if ! cmp -s "$scratch/$dataset-serial.txt" "$scratch/$dataset-cuda-b$block.txt"; then
             echo "Prediction mismatch for $dataset at block size $block" >&2
-            diff -u "$scratch/serial.txt" "$scratch/cuda.txt" >&2 || true
+            diff -u "$scratch/$dataset-serial.txt" "$scratch/$dataset-cuda-b$block.txt" >&2 || true
             exit 1
         fi
         echo "PASS $dataset k=$k block=$block, all predictions match serial"

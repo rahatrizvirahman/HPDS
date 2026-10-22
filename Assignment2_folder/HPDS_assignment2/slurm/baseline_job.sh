@@ -18,6 +18,13 @@ if [[ -n ${MODULES:-} ]]; then
     read -r -a requested_modules <<< "$MODULES"
     module load "${requested_modules[@]}"
 fi
+mkdir -p results
+export TMPDIR="$PWD/results/tmp-$SLURM_JOB_ID"
+mkdir -p "$TMPDIR"
+git rev-parse HEAD
+git diff -- . > "results/job-$SLURM_JOB_ID.patch"
+module list 2>&1
+lscpu
 hostname
 date -u
 printf 'Slurm job %s\n' "$SLURM_JOB_ID"
@@ -27,6 +34,7 @@ g++ --version
 if command -v nvidia-smi >/dev/null 2>&1; then nvidia-smi; fi
 # Force rebuilding so the log captures the actual flags and no stale binary is used.
 make -B all
+python3 tests/test_benchmark.py
 case "${1:-verify}" in
     verify) srun --ntasks=1 bash ./verify_accuracy.sh ;;
     benchmark) srun --ntasks=1 bash ./run_experiments.sh ;;

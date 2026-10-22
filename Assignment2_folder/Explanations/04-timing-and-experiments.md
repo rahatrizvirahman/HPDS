@@ -13,3 +13,9 @@ The job script records the host, GPU, compiler versions, and build commands. Slu
 A correctness failure stops the sweep. Logs and prediction files remain available to explain the failure; they do not become successful timing rows. Cluster timeouts similarly leave partial evidence rather than a complete summary.
 
 Use `k=3`, all three supplied datasets, and block sizes 64, 128, and 256 for the baseline study. The later shared-memory and multi-GPU work adds experiments rather than relabeling these baseline runs as a complete assignment.
+
+## Maple validation workflow
+
+The confirmed Maple request uses one GPU in `gpu`, account `egr`, QOS `normal`, and modules `gcc/11 cuda/12.3`. Small verification precedes full verification, which precedes the measured sweep. All compilation and KNN execution happen inside Slurm allocations.
+
+Verification originally deleted its temporary predictions. It now retains them with dataset and block identifiers so a mismatch can be inspected after the job ends. Synthetic checks likewise retain each command, exit status, stdout, stderr, and prediction file. For example, the small dataset at block size 64 has its own file rather than being overwritten by block size 128. The job records the Git revision and a patch because uncommitted workflow changes are not identified by the revision alone. Temporary compiler files stay under Assignment 2 through `TMPDIR`.

@@ -105,3 +105,24 @@ python3 tests/test_benchmark.py
 Personal explanations are in [Explanations](../Explanations/). After successful cluster verification, the next implementation steps are shared-memory reuse and MPI+CUDA. No speedup claim is made until actual GPU results are available.
 
 See [VALIDATION.md](VALIDATION.md) for completed local checks and the remaining cluster checks.
+
+## Verified Maple workflow, October 22, 2026
+
+Maple uses partition `gpu`, account `egr`, QOS `normal`, and `--gres=gpu:1`.
+The user association permits aggregate resources of 2 CPUs, 1 GPU, and 16 GB.
+The partition maximum wall time is 30 days. No separate job-count or submission-count limit was reported for this association. Run these jobs sequentially.
+The allocated GPU is a GTX 1080 Ti with 11264 MiB. Modules are `gcc/11` and `cuda/12.3`.
+
+These exact commands were used from this directory. The first job was 1470 and the full verification job was 1471.
+
+```bash
+MODULES='gcc/11 cuda/12.3' DATASETS=small BLOCK_SIZES='64 128 256' K=3 sbatch --parsable --partition=gpu --account=egr --qos=normal --gres=gpu:1 --time=00:05:00 --output=slurm/logs/baseline-%j.log slurm/baseline_job.sh verify
+MODULES='gcc/11 cuda/12.3' DATASETS='small medium large' BLOCK_SIZES='64 128 256' K=3 sbatch --parsable --partition=gpu --account=egr --qos=normal --gres=gpu:1 --output=slurm/logs/baseline-%j.log slurm/baseline_job.sh verify
+MODULES='gcc/11 cuda/12.3' DATASETS='small medium large' BLOCK_SIZES='64 128 256' REPS=3 K=3 sbatch --parsable --partition=gpu --account=egr --qos=normal --gres=gpu:1 --output=slurm/logs/baseline-%j.log slurm/baseline_job.sh benchmark
+squeue -u "$USER"
+sacct -j 1470,1471 --format=JobID,State,ExitCode,Elapsed,AllocTRES%80
+```
+
+Submit the benchmark only after full verification passes. The batch script executes `make -B all` inside the allocation. Its Makefile uses `g++ -I libarff -O2 -std=c++11 -ffp-contract=off` and `nvcc -I libarff -O2 -std=c++11 --fmad=false` with the corresponding source and parser files. Full commands are preserved in each job log.
+
+Verification retains dataset predictions in `results/verify.*` and synthetic inputs, commands, outputs, and predictions in `results/correctness-*`. Job logs include CPU/GPU information and compiler versions. Each job writes its source diff and uses an Assignment 2 temporary directory.

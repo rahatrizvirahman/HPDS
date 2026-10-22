@@ -19,3 +19,7 @@ This machine has no `nvcc` or CUDA execution environment. The CUDA source has no
 Run the discovery workflow in `README.md` on Maple and Athena first. Confirm their modules and Slurm GPU requests, then submit the verification job. It rebuilds the CUDA program, runs the synthetic tests on the real GPU, and compares all supplied-dataset predictions at block sizes 64, 128, and 256.
 
 Record each system's successful build and verification log before collecting report measurements. Shared-memory and MPI+CUDA validation will follow their implementation in later milestones.
+
+## Maple validation completed October 22, 2026
+
+The earlier unvalidated status above describes the local authoring environment. Maple jobs 1470, 1471, and 1472 all completed with exit code 0:0. CUDA built successfully with CUDA 12.3 and GCC 11.4 on a GTX 1080 Ti. Synthetic checks and exact predictions passed for all datasets at k=3 and blocks 64, 128, and 256. All 36 benchmark prediction files matched serial. See [Maple baseline results](../MAPLE_BASELINE_RESULTS.md) for measurements, settings, changes, and artifact paths. Athena, shared memory, and MPI+CUDA remain unvalidated.
