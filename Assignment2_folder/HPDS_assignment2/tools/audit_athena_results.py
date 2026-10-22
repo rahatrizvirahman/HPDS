@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Independently audit an Athena benchmark directory against its logs and predictions."""
 import csv
+import os
 from pathlib import Path
 import re
 import statistics
@@ -8,21 +9,27 @@ import subprocess
 import sys
 
 DATASETS = ("small", "medium", "large")
-CONFIGS = [("serial", 0), ("global", 64), ("global", 128), ("global", 256)]
+# STRATEGIES (default global) names the CUDA strategies the sweep was expected to contain.
+STRATEGIES = os.environ.get("STRATEGIES", "global").split()
+CONFIGS = [("serial", 0)] + [(s, b) for s in STRATEGIES for b in (64, 128, 256)]
 
 
 def main(directory, jobs):
     directory = Path(directory)
     out = []
     rows = list(csv.DictReader((directory / "raw.csv").open()))
-    assert len(rows) == 36, f"expected 36 rows, found {len(rows)}"
+    expected_groups = len(DATASETS) * len(CONFIGS)
+    expected_rows = 3 * expected_groups
+    assert len(rows) == expected_rows, f"expected {expected_rows} rows, found {len(rows)}"
     out.append(f"raw.csv rows {len(rows)}")
     groups = {}
     for row in rows:
         groups.setdefault((row["dataset"], row["strategy"], int(row["block_size"])), []).append(row)
-    assert len(groups) == 12 and all(len(v) == 3 for v in groups.values())
-    assert sum(g[1] == "serial" for g in groups) == 3 and sum(g[1] == "global" for g in groups) == 9
-    out.append("12 dataset/strategy/block groups with 3 repetitions each (9 serial, 27 CUDA rows)")
+    assert len(groups) == expected_groups and all(len(v) == 3 for v in groups.values())
+    assert sum(g[1] == "serial" for g in groups) == 3
+    assert all(sum(g[1] == s for g in groups) == 9 for s in STRATEGIES)
+    out.append(f"{expected_groups} dataset/strategy/block groups with 3 repetitions each "
+               f"(9 serial and {27 * len(STRATEGIES)} CUDA rows)")
     assert all(sorted(int(r["rep"]) for r in v) == [1, 2, 3] for v in groups.values())
     # Every prediction file against the first serial file, and every CSV value against its process log.
     for row in rows:
@@ -38,10 +45,10 @@ def main(directory, jobs):
         assert record["accuracy"] == row["accuracy"], stem
         assert record.get("kernel_ms", "") == row["kernel_ms"], stem
         assert row["predictions_match"] == "yes" and row["k"] == "3", stem
-        if row["strategy"] == "global":
-            assert "A100" in text.splitlines()[0] or "A100" in text, stem
-    out.append("All 36 prediction files are byte-identical to the dataset's serial reference")
-    out.append("All 36 CSV rows equal the RESULT records in their individual logs")
+        if row["strategy"] != "serial":
+            assert "A100" in text, stem
+    out.append(f"All {len(rows)} prediction files are byte-identical to the dataset's serial reference")
+    out.append(f"All {len(rows)} CSV rows equal the RESULT records in their individual logs")
     # Recompute summaries.
     summary = {(r["dataset"], r["strategy"], int(r["block_size"])): r
                for r in csv.DictReader((directory / "summary.csv").open())}
@@ -59,7 +66,7 @@ def main(directory, jobs):
                 assert abs(float(claimed[key]) - value) <= 1e-9 * max(1, abs(value)), (dataset, strategy, block, key)
             assert int(claimed["runs"]) == 3
             kmean = ""
-            if strategy == "global":
+            if strategy != "serial":
                 kernel = [float(r["kernel_ms"]) for r in groups[(dataset, strategy, block)]]
                 assert all(k < e for k, e in zip(kernel, e2e))
                 kmean = statistics.mean(kernel)

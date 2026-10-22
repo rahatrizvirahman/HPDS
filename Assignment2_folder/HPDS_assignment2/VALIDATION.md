@@ -27,3 +27,7 @@ The earlier unvalidated status above describes the local authoring environment. 
 ## Athena validation completed October 22, 2026
 
 Athena jobs 3382502 (small), 3382504 (all datasets) and 3382505 (benchmark) completed with exit code 0:0 on an A100-SXM4-80GB with CUDA 12.3. Synthetic checks and complete prediction files matched serial for every dataset at k=3 and blocks 64, 128 and 256, and all 36 benchmark predictions matched. See [Athena baseline results](../ATHENA_BASELINE_RESULTS.md). Shared memory and MPI+CUDA remain unvalidated.
+
+## Athena shared-memory validation completed October 22, 2026
+
+Athena jobs 3382580, 3382581 and 3382591 completed 0:0. The shared-memory strategy and the refactored global kernel matched serial on every dataset at k=3 and blocks 64, 128 and 256, with synthetic partial-tile and partial-block cases passing. All 63 benchmark predictions matched. See [Athena shared-memory results](../ATHENA_SHARED_MEMORY_RESULTS.md). Maple validation of the shared kernel and MPI+CUDA remain outstanding.

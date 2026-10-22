@@ -174,3 +174,7 @@ sacct -X -j JOBID --format=JobID,State,ExitCode,Elapsed,AllocTRES%60
 ```
 
 After the benchmark, `python3 -I tools/audit_athena_results.py results/athena/baseline-DIRECTORY JOB1 JOB2 JOB3` recomputes counts, prediction comparisons, log agreement, summaries and Slurm states. See [ATHENA_BASELINE_RESULTS.md](../ATHENA_BASELINE_RESULTS.md) for results. The evidence archive is `../athena-baseline-evidence-20261022.tar.gz`, built by `tools/package_athena_results.py`.
+
+## Shared-memory strategy on Athena
+
+`./cuda train.arff test.arff k block [predictions.txt] [--strategy=global|shared] [--tile=rows]` selects the kernel. The default is global with a 256-row tile for shared. `STRATEGIES` (default `global`) and `TILE_ROWS` (default 256) select the same options for `verify_accuracy.sh` and `benchmark_baseline.py`. Athena jobs for this milestone use `bash slurm/athena/submit_athena_shared.sh small|verify|benchmark`, which runs both strategies and writes to `results/athena-shared/`. Run the three jobs in order and check each with `bash slurm/athena/monitor_athena.sh JOBID`. The audit command is `STRATEGIES='global shared' python3 -I tools/audit_athena_results.py results/athena-shared/baseline-DIRECTORY JOB1 JOB2 JOB3`. Results are in [ATHENA_SHARED_MEMORY_RESULTS.md](../ATHENA_SHARED_MEMORY_RESULTS.md), with evidence in `../athena-shared-memory-evidence-20261022.tar.gz`. For Maple, the same options apply with the Maple partition, account and modules, but the shared kernel has not been run there yet.

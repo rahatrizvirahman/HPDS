@@ -55,8 +55,13 @@ def main():
     repetitions = positive(os.environ.get("REPS", "3"))
     datasets = os.environ.get("DATASETS", "small medium large").split()
     blocks = [positive(v) for v in os.environ.get("BLOCK_SIZES", "64 128 256").split()]
+    strategies = os.environ.get("STRATEGIES", "global").split()
+    tile_rows = positive(os.environ.get("TILE_ROWS", "256"))
     if not datasets or not blocks or any(d not in ("small", "medium", "large") for d in datasets):
         raise ValueError("Select known datasets and at least one block size")
+    if not strategies or any(s not in ("global", "shared") for s in strategies):
+        raise ValueError("Select global and/or shared strategies")
+    configurations = [("serial", 0)] + [(s, b) for s in strategies for b in blocks]
     output = results_root()
     output.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -68,7 +73,7 @@ def main():
     (destination / "metadata.txt").write_text(
         f"host={socket.gethostname()}\ncommit={revision.stdout.strip()}\n"
         f"slurm_job={os.environ.get('SLURM_JOB_ID', '')}\nrun_id={run_id}\n"
-        f"k={k}\nrepetitions={repetitions}\nblock_sizes={blocks}\n"
+        f"k={k}\nrepetitions={repetitions}\nblock_sizes={blocks}\nstrategies={strategies}\ntile_rows={tile_rows}\n"
         "warmup=none\nEach measurement launches a fresh process.\n"
         "Preserve the Slurm log for GPU model, compiler versions, and build flags.\n")
     fields = ["host", "dataset", "k", "strategy", "block_size", "rep",
@@ -80,12 +85,14 @@ def main():
         for dataset in datasets:
             inputs = [f"datasets/{dataset}-train.arff", f"datasets/{dataset}-test.arff", str(k)]
             reference = None
-            for strategy, block in [("serial", 0)] + [("global", b) for b in blocks]:
+            for strategy, block in configurations:
                 for rep in range(1, repetitions + 1):
                     stem = f"{dataset}-{strategy}-b{block}-r{rep}"
                     prediction_file = destination / f"{stem}.predictions.txt"
                     command = ["./serial"] if strategy == "serial" else ["./cuda"]
                     command += inputs + ([] if strategy == "serial" else [str(block)])
+                    if strategy == "shared":
+                        command += ["--strategy=shared", f"--tile={tile_rows}"]
                     record = run(command + [str(prediction_file)], destination / f"{stem}.log")
                     if record["strategy"] != strategy:
                         raise ValueError("Unexpected program strategy")
@@ -110,7 +117,7 @@ def main():
         for dataset in datasets:
             serial_mean = statistics.mean(float(r["end_to_end_ms"]) for r in rows
                                           if r["dataset"] == dataset and r["strategy"] == "serial")
-            for strategy, block in [("serial", 0)] + [("global", b) for b in blocks]:
+            for strategy, block in configurations:
                 times = [float(r["end_to_end_ms"]) for r in rows if r["dataset"] == dataset
                          and r["strategy"] == strategy and r["block_size"] == block]
                 mean = statistics.mean(times)
