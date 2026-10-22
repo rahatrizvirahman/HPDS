@@ -126,3 +126,21 @@ sacct -j 1470,1471 --format=JobID,State,ExitCode,Elapsed,AllocTRES%80
 Submit the benchmark only after full verification passes. The batch script executes `make -B all` inside the allocation. Its Makefile uses `g++ -I libarff -O2 -std=c++11 -ffp-contract=off` and `nvcc -I libarff -O2 -std=c++11 --fmad=false` with the corresponding source and parser files. Full commands are preserved in each job log.
 
 Verification retains dataset predictions in `results/verify.*` and synthetic inputs, commands, outputs, and predictions in `results/correctness-*`. Job logs include CPU/GPU information and compiler versions. Each job writes its source diff and uses an Assignment 2 temporary directory.
+
+## Transfer and inspect the cleaned Maple evidence
+
+The tracked archive `../maple-baseline-evidence-20261022.tar.gz` contains the raw evidence for jobs 1470–1472. Its adjacent `.sha256` file verifies the download. The original working results remain ignored by Git. This archive is a deliberately published snapshot.
+
+After pulling the repository, run from `Assignment2_folder`.
+
+```bash
+sha256sum -c maple-baseline-evidence-20261022.tar.gz.sha256
+mkdir -p HPDS_assignment2/results
+tar -xzf maple-baseline-evidence-20261022.tar.gz -C HPDS_assignment2/results
+```
+
+Open `HPDS_assignment2/results/maple-baseline-evidence-20261022/README.md`. The bundle groups CSVs, logs, and predictions under `measurements/`, with separate `verification/`, `slurm/`, `environment/`, `provenance/`, `diagnostics/`, and `source/` directories. `manifest.csv` records original paths and SHA-256 digests. The included summary preserves the original Maple paths, which the manifest maps to the bundle layout.
+
+The packaging script `tools/package_maple_results.py` copies existing evidence and verifies all 36 measured predictions and archived file digests. It omits binaries, Python caches, and empty compiler temporary directories. It refuses to overwrite an existing bundle. It does not rerun the workload or change measurements.
+
+Slurm already writes benchmark output directly into a unique results directory. The additional top-level working files came from discovery and separate verification jobs. Use the grouped bundle for transfer and analysis; retain the original evidence for traceability.

@@ -69,3 +69,7 @@ All paths below are relative to Assignment2_folder.
 - `maple-baseline-results-20261022.tar.gz` contains these results, logs, final source and datasets, explanations, and this summary. Its checksum is in the adjacent `.sha256` file.
 
 No blockers remain for this baseline milestone. Maple has only one GPU, which will constrain later multi-GPU work. No measurements for later milestones are claimed here.
+
+## Clean evidence bundle for transfer
+
+`maple-baseline-evidence-20261022.tar.gz` and its `.sha256` file provide a smaller, organized copy of the evidence for Git transfer. They contain all original result files and Slurm logs, grouped by purpose, plus source and datasets. Empty compiler temporary directories, binaries, and caches are excluded. The internal `manifest.csv` maps original paths in this summary to bundle paths and records SHA-256 digests. All 292 copied files and all 36 measured prediction files were verified during packaging. The original archive and working evidence remain on Maple unchanged.
