@@ -1,0 +1,2 @@
+nodes used: 1
+The 3-NN classifier for 740 test instances and 14708 train instances required 93 ms CPU time for MPI with 6 processes. Accuracy was 27.57%

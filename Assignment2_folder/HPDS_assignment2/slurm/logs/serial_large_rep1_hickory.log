@@ -1,0 +1,2 @@
+nodes used: 1
+The 3-NN classifier for 3436 test instances and 61606 train instances required 8060 ms CPU time for single-thread. Accuracy was 99.48%

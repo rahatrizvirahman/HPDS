@@ -1,0 +1,9 @@
+all: matrixTranspose matrix_multiplication_6_naive_transposed matrix_multiplication_9_complete_tiles
+matrixTranspose: matrixTranspose.cu
+	nvcc matrixTranspose.cu -o matrixTranspose
+matrix_multiplication_6_naive_transposed: matrix_multiplication_6_naive_transposed.cu
+	nvcc matrix_multiplication_6_naive_transposed.cu -o matrix_multiplication_6_naive_transposed
+matrix_multiplication_9_complete_tiles: matrix_multiplication_9_complete_tiles.cu
+	nvcc matrix_multiplication_9_complete_tiles.cu -o matrix_multiplication_9_complete_tiles	
+clean:
+	rm matrixTranspose matrix_multiplication_6_naive_transposed matrix_multiplication_9_complete_tiles
