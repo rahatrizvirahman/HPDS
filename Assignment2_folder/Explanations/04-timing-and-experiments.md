@@ -19,3 +19,7 @@ Use `k=3`, all three supplied datasets, and block sizes 64, 128, and 256 for the
 The confirmed Maple request uses one GPU in `gpu`, account `egr`, QOS `normal`, and modules `gcc/11 cuda/12.3`. Small verification precedes full verification, which precedes the measured sweep. All compilation and KNN execution happen inside Slurm allocations.
 
 Verification originally deleted its temporary predictions. It now retains them with dataset and block identifiers so a mismatch can be inspected after the job ends. Synthetic checks likewise retain each command, exit status, stdout, stderr, and prediction file. For example, the small dataset at block size 64 has its own file rather than being overwritten by block size 128. The job records the Git revision and a patch because uncommitted workflow changes are not identified by the revision alone. Temporary compiler files stay under Assignment 2 through `TMPDIR`.
+
+## Organizing completed evidence
+
+After validation, the Maple evidence was grouped under `results/maple-baseline/`. Summary CSVs, raw measurements, predictions, logs, verification cases, and environment records have separate directories. Patches and discovery diagnostics are nested under environment. This does not affect timing or correctness. A path manifest and checksums preserve traceability when historical logs refer to old locations. Empty compiler temporary directories were removed. Published archives remain unchanged so existing checksums and transfers stay valid.

@@ -55,21 +55,22 @@ There were no failed or incomplete Slurm jobs. The initial sandboxed cluster ins
 
 ## Artifact paths
 
-All paths below are relative to Assignment2_folder.
+The working evidence is now grouped under `HPDS_assignment2/results/maple-baseline/`. All paths below are relative to that directory.
 
-- `HPDS_assignment2/results/cluster-maple.txt` preserves the sandbox inspection failure.
-- `HPDS_assignment2/results/cluster-maple-unrestricted.txt` and `slurm-settings.txt` in the same directory preserve successful discovery and limits.
-- `HPDS_assignment2/slurm/logs/baseline-1470.log`, `baseline-1471.log`, and `baseline-1472.log` preserve build, hardware, and execution logs.
-- `HPDS_assignment2/results/jobs-accounting.txt` records final job and step states, exit codes, times, and allocated resources.
-- `HPDS_assignment2/results/verify.*` contains dataset verification predictions.
-- `HPDS_assignment2/results/correctness-*` contains synthetic check evidence. The generator in the archived source defines both test inputs, including the final omitted-class case.
-- `HPDS_assignment2/results/baseline-20261022T195803Z-ag9hh8np` contains raw.csv, summary.csv, kernel-summary.csv, metadata.txt, and all 36 individual logs and prediction files.
-- `HPDS_assignment2/results/audit.txt` records the independent measurement-count and prediction audit.
-- `HPDS_assignment2/results/job-*.patch` and `final-changes.patch` preserve workflow changes relative to the tested revision.
-- `maple-baseline-results-20261022.tar.gz` contains these results, logs, final source and datasets, explanations, and this summary. Its checksum is in the adjacent `.sha256` file.
+- `summary/summary.csv` and `summary/kernel-summary.csv` contain average times and speedups.
+- `measurements/raw.csv` and `measurements/metadata.txt` contain the 36 observations and benchmark metadata.
+- `predictions/` contains every measured prediction file.
+- `logs/measurements/` contains the 36 individual process logs; `logs/slurm/` contains the three build and job logs. Original Slurm logs also remain in `HPDS_assignment2/slurm/logs/`.
+- `verification/verify.*` and `verification/correctness-*` preserve dataset and synthetic correctness evidence.
+- `environment/` contains successful cluster discovery, settings, accounting, and the audit.
+- `environment/patches/` preserves the per-job and final source patches.
+- `environment/diagnostics/` contains the sandbox inspection failure, PDF text, and queue snapshot.
+- `manifest.csv` maps every moved evidence file from its old path to its current path, with SHA-256 checksums. Historical logs and patches retain their original path text.
+
+The reorganization verified all 247 moved files and rechecked all 36 measured predictions. Only empty working directories and a duplicate extraction verified against its archive were removed. Both transfer archives and their checksums remain unchanged in `Assignment2_folder`. Their internal layouts remain as originally packaged.
 
 No blockers remain for this baseline milestone. Maple has only one GPU, which will constrain later multi-GPU work. No measurements for later milestones are claimed here.
 
 ## Clean evidence bundle for transfer
 
-`maple-baseline-evidence-20261022.tar.gz` and its `.sha256` file provide a smaller, organized copy of the evidence for Git transfer. They contain all original result files and Slurm logs, grouped by purpose, plus source and datasets. Empty compiler temporary directories, binaries, and caches are excluded. The internal `manifest.csv` maps original paths in this summary to bundle paths and records SHA-256 digests. All 292 copied files and all 36 measured prediction files were verified during packaging. The original archive and working evidence remain on Maple unchanged.
+`maple-baseline-evidence-20261022.tar.gz` and its `.sha256` file provide a smaller, organized copy of the evidence for Git transfer. They contain all original result files and Slurm logs, grouped by purpose, plus source and datasets. Empty compiler temporary directories, binaries, and caches are excluded. The internal `manifest.csv` maps original paths in this summary to bundle paths and records SHA-256 digests. All 292 copied files and all 36 measured prediction files were verified during packaging. The original archive remains unchanged. Working evidence has been moved into the layout above without changing file contents.

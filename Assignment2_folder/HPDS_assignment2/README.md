@@ -144,3 +144,9 @@ Open `HPDS_assignment2/results/maple-baseline-evidence-20261022/README.md`. The 
 The packaging script `tools/package_maple_results.py` copies existing evidence and verifies all 36 measured predictions and archived file digests. It omits binaries, Python caches, and empty compiler temporary directories. It refuses to overwrite an existing bundle. It does not rerun the workload or change measurements.
 
 Slurm already writes benchmark output directly into a unique results directory. The additional top-level working files came from discovery and separate verification jobs. Use the grouped bundle for transfer and analysis; retain the original evidence for traceability.
+
+## Working results layout on Maple
+
+The completed run now lives under `results/maple-baseline/`, with `summary/`, `measurements/`, `predictions/`, `logs/`, `verification/`, and `environment/` subdirectories. Start with `summary/summary.csv`. `manifest.csv` maps historical paths to current paths and records checksums. For example, the former `results/baseline-20261022T195803Z-ag9hh8np/large-global-b64-r2.log` is now `results/maple-baseline/logs/measurements/large-global-b64-r2.log`.
+
+This cleanup changed storage paths only. Slurm's original logs and both published archive layouts remain unchanged. Future runs still use unique directories created by the existing runners; this layout describes the completed baseline. `tools/organize_maple_results.py` records the one-time reorganization and refuses to overwrite an existing organized destination.

@@ -30,7 +30,21 @@ def main():
     for source in sorted(RESULTS.rglob('*')):
         if not source.is_file():
             continue
-        if source.parent == BENCHMARK:
+        organized = RESULTS / 'maple-baseline'
+        if organized in source.parents:
+            subpath = source.relative_to(organized)
+            parts = subpath.parts
+            if parts[0] == 'summary':
+                relative = Path('measurements') / source.name
+            elif parts[0] == 'predictions':
+                relative = Path('measurements/predictions') / source.name
+            elif parts[:2] == ('logs', 'measurements'):
+                relative = Path('measurements/logs') / source.name
+            elif parts[:2] == ('logs', 'slurm'):
+                continue  # Copied below from the retained Slurm log location.
+            else:
+                relative = subpath
+        elif source.parent == BENCHMARK:
             category = 'predictions' if source.name.endswith('.predictions.txt') else 'logs' if source.suffix == '.log' else ''
             relative = Path('measurements') / category / source.name
         elif source.parent.name.startswith(('verify.', 'correctness-')):
