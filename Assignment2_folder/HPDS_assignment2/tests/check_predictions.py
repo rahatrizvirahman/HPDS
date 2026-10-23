@@ -2,6 +2,7 @@
 """Exercise neighbor ties, vote ties, runtime k, and partial query blocks."""
 import argparse
 import contextlib
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,8 +14,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cuda", action="store_true", help="Also exercise the actual CUDA executable")
     args = parser.parse_args()
-    (ROOT / "results").mkdir(exist_ok=True)
-    with contextlib.nullcontext(tempfile.mkdtemp(prefix="correctness-", dir=ROOT / "results")) as scratch:
+    output = ROOT / os.environ.get("RESULTS_ROOT", "results")
+    output.mkdir(parents=True, exist_ok=True)
+    run_id = os.environ.get("RUN_ID", "")
+    with contextlib.nullcontext(tempfile.mkdtemp(prefix=f"correctness-{run_id + '.' if run_id else ''}", dir=output)) as scratch:
         folder = Path(scratch)
         header = "@relation ties\n@attribute feature numeric\n@attribute class numeric\n@data\n"
         train, test, output = (folder / name for name in ("train.arff", "test.arff", "predictions.txt"))
@@ -41,21 +44,33 @@ def main():
                 result.check_returncode()
             return result
 
-        configurations = [("serial", [])]
+        configurations = [("serial", [], [])]
         if args.cuda:
-            configurations += [("cuda", [str(block)]) for block in (1, 64, 128, 256)]
-        for binary, extra in configurations:
+            configurations += [("cuda", [str(block)], []) for block in (1, 64, 128, 256)]
+            # The shared strategy is exercised when STRATEGIES lists it. Tiles of 1 and 3 rows split the
+            # four training rows into full and partial tiles, and block size 2 leaves the last query block partial.
+            if "shared" in os.environ.get("STRATEGIES", "global").split():
+                configurations += [("cuda", [str(block)], ["--strategy=shared", f"--tile={tile}"])
+                                   for block in (1, 2, 64, 128, 256) for tile in (1, 3, 256)]
+        for binary, extra, flags in configurations:
             for k, expected in [(1, [1, 0, 2]), (2, [0, 0, 0]), (4, [0, 0, 0])]:
-                run([str(ROOT / binary), str(train), str(test), str(k)] + extra + [str(output)],
+                run([str(ROOT / binary), str(train), str(test), str(k)] + extra + [str(output)] + flags,
                                check=True, stdout=subprocess.PIPE, text=True)
                 actual = [int(v) for v in output.read_text().splitlines()]
                 if actual != expected:
                     raise AssertionError(f"{binary} {extra} k={k}, expected {expected}, got {actual}")
             for bad_k in ("0", "-1", "5", "abc", "3x"):
-                result = run([str(ROOT / binary), str(train), str(test), bad_k] + extra,
+                result = run([str(ROOT / binary), str(train), str(test), bad_k] + extra + flags,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 if result.returncode == 0:
                     raise AssertionError(f"{binary} accepted invalid k={bad_k}")
+        if args.cuda and "shared" in os.environ.get("STRATEGIES", "global").split():
+            for flags in (["--strategy=other"], ["--strategy=shared", "--tile=0"], ["--strategy=shared", "--tile=abc"],
+                          ["--strategy=shared", "--tile=100000000"]):
+                result = run([str(ROOT / "cuda"), str(train), str(test), "1", "64"] + flags,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if result.returncode == 0:
+                    raise AssertionError(f"cuda accepted invalid options {flags}")
         # A test set may omit classes present in training.
         test.write_text(header + "4,0\n")
         run([str(ROOT / "serial"), str(train), str(test), "1", str(output)],
@@ -64,7 +79,8 @@ def main():
             raise AssertionError("Prediction must remain valid when test labels omit a training class")
     print("PASS neighbor ties, vote ties, valid and invalid k, and prediction output")
     if args.cuda:
-        print("PASS CUDA predictions with partial blocks")
+        print("PASS CUDA predictions with partial blocks" +
+              (" and partial shared-memory tiles" if "shared" in os.environ.get("STRATEGIES", "global").split() else ""))
 
 
 if __name__ == "__main__":

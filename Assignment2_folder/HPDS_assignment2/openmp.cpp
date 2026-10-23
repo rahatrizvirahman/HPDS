@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <omp.h>
 #include <bits/stdc++.h>
+#include <chrono>
+#include "knn_io.h"
 #include "libarff/arff_parser.h"
 #include "libarff/arff_data.h"
 
@@ -89,43 +91,17 @@ int* KNN(ArffData* train, ArffData* test, int k) {
     return predictions;
 }
 
-int* computeConfusionMatrix(int* predictions, ArffData* dataset)
+int main(int argc, char *argv[]) try
 {
-    int* confusionMatrix = (int*)calloc(dataset->num_classes() * dataset->num_classes(), sizeof(int)); // matrix size numberClasses x numberClasses
-    
-    for(int i = 0; i < dataset->num_instances(); i++) { // for each instance compare the true class and predicted class    
-        int trueClass = dataset->get_instance(i)->get(dataset->num_attributes() - 1)->operator int32();
-        int predictedClass = predictions[i];
-        
-        confusionMatrix[trueClass*dataset->num_classes() + predictedClass]++;
-    }
-    
-    return confusionMatrix;
-}
-
-float computeAccuracy(int* confusionMatrix, ArffData* dataset)
-{
-    int successfulPredictions = 0;
-    
-    for(int i = 0; i < dataset->num_classes(); i++) {
-        successfulPredictions += confusionMatrix[i*dataset->num_classes() + i]; // elements in the diagonal are correct predictions
-    }
-    
-    return 100 * successfulPredictions / (float) dataset->num_instances();
-}
-
-int main(int argc, char *argv[])
-{
-    if(argc != 5)
-    {    
-        printf("Usage: ./program datasets/train.arff datasets/test.arff k num_threads");
-        exit(0);
+    if(argc != 5 && argc != 6)
+    {
+        fprintf(stderr, "Usage: ./openmp train.arff test.arff k num_threads [predictions.txt]\n");
+        return 1;
     }
 
-    // k value for the k-nearest neighbors
-    int k = strtol(argv[3], NULL, 10);
-    int num_threads = strtol(argv[4], NULL, 10);
-
+    // k value for the k-nearest neighbors and the worker count
+    int k = positive_integer(argv[3]);
+    int num_threads = positive_integer(argv[4]);
     omp_set_num_threads(num_threads);
 
     // Open the datasets
@@ -133,27 +109,27 @@ int main(int argc, char *argv[])
     ArffParser parserTest(argv[2]);
     ArffData *train = parserTrain.parse();
     ArffData *test = parserTest.parse();
-    
-    struct timespec start, end;
-    int* predictions = NULL;
-    
-    // Initialize time measurement
-    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-    
-    predictions = KNN(train, test, k);
-    
-    // Stop time measurement
-    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+    validate_datasets(train, test, k);
 
-    // Compute the confusion matrix
-    int* confusionMatrix = computeConfusionMatrix(predictions, test);
-    // Calculate the accuracy
-    float accuracy = computeAccuracy(confusionMatrix, test);
+    // Same classification boundary as serial.cpp, after parsing and including matrix preparation
+    auto start = std::chrono::steady_clock::now();
+    int* predictions = KNN(train, test, k);
+    auto end = std::chrono::steady_clock::now();
 
-    uint64_t time_difference = (1000000000L * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec) / 1e6;
+    int correct = 0;
+    for (int row = 0; row < test->num_instances(); ++row)
+        if (predictions[row] == test->get_instance(row)->get(test->num_attributes() - 1)->operator int32())
+            ++correct;
+    float accuracy = 100.0f * correct / test->num_instances();
+    if (argc == 6) write_predictions(argv[5], predictions, test->num_instances());
 
-    printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for OpenMP with %d threads. Accuracy was %.2f%%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, num_threads, accuracy);
+    double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
+    printf("The %d-NN classifier required %.6f ms with %d threads. Accuracy was %.2f%%\n", k, time_ms, num_threads, accuracy);
+    printf("RESULT strategy=openmp workers=%d end_to_end_ms=%.6f accuracy=%.8f\n", num_threads, time_ms, accuracy);
 
     free(predictions);
-    free(confusionMatrix);
+}
+catch (const std::exception& error) {
+    fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

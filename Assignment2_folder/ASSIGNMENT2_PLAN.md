@@ -2,7 +2,7 @@
 
 ## Scope and current status
 
-This document records the overall plan. The first CUDA baseline milestone is now implemented in `HPDS_assignment2/`, with serial prediction checks, a configurable Slurm job, baseline measurements, and personal explanations. GPU compilation and execution still require validation on Maple and Athena. Shared-memory optimization, MPI+CUDA, full comparisons, and report writing remain future work. Existing starting materials were committed first in `2e49982`.
+This document records the overall plan. The first CUDA baseline milestone is now implemented in `HPDS_assignment2/`, with serial prediction checks, a configurable Slurm job, baseline measurements, and personal explanations. As of October 23, 2026 the baseline and shared-memory kernels, the MPI+CUDA program and the CPU comparison are implemented. Athena has A100 and H100 single-GPU results, CPU comparison results and MPI+CUDA verification, but no timed multi-GPU scaling run. Maple has baseline results only. The Overleaf report remains to be written. See `REPORT_HANDOFF.md`. Existing starting materials were committed first in `2e49982`.
 
 All new work belongs under `Assignment2_folder/`. Treat `Assignment1_folder/` and `Lecture_materials/` as reference material. Follow the root `CLAUDE.md` rules in code comments, explanations, and report prose.
 
@@ -66,7 +66,7 @@ Streams are taught in Lecture 13 but are optional follow-up work only if measure
 
 ## Proposed folder structure
 
-The layout below describes the target structure. Baseline files now exist; shared-memory, MPI+CUDA, and report files remain planned. The current cluster workflow uses a shared configurable job body, with platform-specific resource options supplied to `sbatch`. Historical helpers are archived; the new baseline runner is `benchmark_baseline.py`.
+The layout below describes the target structure. Baseline, shared-memory, MPI+CUDA and CPU files now exist; report files remain planned. The current cluster workflow uses a shared configurable job body, with platform-specific resource options supplied to `sbatch`. Historical helpers are archived; the new baseline runner is `benchmark_baseline.py`.
 
 ```text
 Assignment2_folder/

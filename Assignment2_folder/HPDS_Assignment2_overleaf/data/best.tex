@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering\caption{Lowest observed mean GPU classification time per dataset. Speedup uses serial from the same sweep.}\label{tab:best}
+\small\setlength{\tabcolsep}{3pt}\begin{tabular}{lllrrr}\toprule
+GPU & Data & Kernel & Block & ms & Speedup \\
+\midrule
+GTX 1080 Ti & small & global & 128 & 2.699 & 0.67 \\
+GTX 1080 Ti & medium & global & 64 & 29.941 & 4.17 \\
+GTX 1080 Ti & large & global & 128 & 111.926 & 21.44 \\
+A100 & small & shared & 256 & 1.488 & 0.93 \\
+A100 & medium & shared & 128 & 13.016 & 7.96 \\
+A100 & large & shared & 64 & 52.563 & 37.81 \\
+H100 & small & shared & 128 & 1.174 & 0.89 \\
+H100 & medium & shared & 128 & 10.261 & 7.39 \\
+H100 & large & shared & 128 & 42.479 & 34.37 \\
+\bottomrule\end{tabular}
+\end{table}

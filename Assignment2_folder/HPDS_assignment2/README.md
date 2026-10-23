@@ -1,6 +1,6 @@
-# Assignment 2 CUDA baseline
+# Assignment 2 CUDA KNN
 
-This is the first implementation milestone. It contains a serial reference and a single-GPU CUDA baseline. The shared-memory strategy, MPI+CUDA implementation, full CPU comparison sweep, and Overleaf report remain planned work in [ASSIGNMENT2_PLAN.md](../ASSIGNMENT2_PLAN.md).
+This folder holds a serial reference, a single-GPU CUDA program with global-memory and shared-memory kernels, an MPI+CUDA program, and the CPU comparison programs. Maple has baseline (global-memory) results. Athena has A100 and H100 single-GPU results, CPU comparison results and MPI+CUDA correctness verification. The timed multi-GPU scaling benchmark on Athena, shared-memory and MPI+CUDA runs on Maple, and the Overleaf report remain outstanding. See [REPORT_HANDOFF.md](../REPORT_HANDOFF.md) for the current state and [ASSIGNMENT2_PLAN.md](../ASSIGNMENT2_PLAN.md) for the plan.
 
 The supplied datasets and parser are unchanged. Historical Assignment 1 results, scripts, and report are preserved in [Reference_assignment1](../Reference_assignment1/). They are not Assignment 2 results.
 
@@ -102,7 +102,7 @@ python3 tests/test_benchmark.py
 
 `make cpu` retains optional pthreads, OpenMP, and MPI targets for later CPU comparisons. Those inherited programs need their respective compiler support and are not exercised by the baseline GPU job.
 
-Personal explanations are in [Explanations](../Explanations/). After successful cluster verification, the next implementation steps are shared-memory reuse and MPI+CUDA. No speedup claim is made until actual GPU results are available.
+Personal explanations are in [Explanations](../Explanations/). Shared memory and MPI+CUDA are now implemented. See the Athena sections below. No speedup claim is made until actual GPU results are available.
 
 See [VALIDATION.md](VALIDATION.md) for completed local checks and the remaining cluster checks.
 
@@ -150,3 +150,63 @@ Slurm already writes benchmark output directly into a unique results directory. 
 The completed run now lives under `results/maple-baseline/`, with `summary/`, `measurements/`, `predictions/`, `logs/`, `verification/`, and `environment/` subdirectories. Start with `summary/summary.csv`. `manifest.csv` maps historical paths to current paths and records checksums. For example, the former `results/baseline-20261022T195803Z-ag9hh8np/large-global-b64-r2.log` is now `results/maple-baseline/logs/measurements/large-global-b64-r2.log`.
 
 This cleanup changed storage paths only. Slurm's original logs and both published archive layouts remain unchanged. Future runs still use unique directories created by the existing runners; this layout describes the completed baseline. `tools/organize_maple_results.py` records the one-time reorganization and refuses to overwrite an existing organized destination.
+
+## Verified Athena workflow, October 22, 2026
+
+Athena settings were discovered separately and do not reuse Maple or Hickory values. Slurm is 23.11.10. GPU partitions are `gpu-v100`, `gpu-a100`, `gpu-h100` and the combined `gpu`. A GPU is requested with `--gres=gpu:1`. QOS `normal` is the only QOS for this user, and no `--account` option was needed. The only limits found for the QOS are per-user aggregates of 13 GPUs, 200 running jobs and 1200 CPUs. Partitions report no wall-time limit.
+
+The login node has no `nvcc` and no GPU. CUDA is a module that appears on GPU nodes, with versions `cuda/12.3`, `cuda/12.9` and `cuda/13.2`. The baseline uses `cuda/12.3` with the node's default `g++` 11.4.1. The sweep ran on an NVIDIA A100-SXM4-80GB (compute capability 8.0, driver 595.91.07). An H100 80GB node (athena531) also exists. A V100 discovery job stayed pending and was cancelled, so no V100 information was collected. GPU counts for later work are 8 A100 GPUs (athena521 and athena522, 4 each), 20 H100 GPUs (athena531 has 8, athena532 to athena534 have 4 each) and V100 nodes with 2 GPUs each (athena512 to athena514 are listed by sinfo). Multi-node runs therefore look possible, but they have not been tried. Only one GPU was requested for this baseline.
+
+All Athena output goes to `results/athena/` and `slurm/logs/athena/`. The scripts accept `RESULTS_ROOT` (default `results`, relative to this directory) and `RUN_ID` (default empty, or `job<ID>` when `RESULTS_ROOT` is set). Maple defaults are unchanged. The submit script builds with an explicit `-gencode arch=compute_80,code=sm_80` so that no PTX compilation occurs inside the first timed kernel launch. The other flags are unchanged (`-O2 -std=c++11 --fmad=false`).
+
+Run from this directory. Each command below is run only after the previous job has completed with exit code 0:0.
+
+```bash
+bash slurm/athena/submit_athena.sh small      # build and small-dataset verification
+bash slurm/athena/submit_athena.sh verify     # all datasets, synthetic cases, blocks 64 128 256
+bash slurm/athena/submit_athena.sh benchmark  # 9 serial and 27 CUDA measurements
+bash slurm/athena/monitor_athena.sh JOBID [JOBID ...]
+```
+
+Each script prints the job ID and appends the exact `sbatch` arguments to `results/athena/submissions.txt`. The underlying command is the following.
+
+```bash
+MODULES='cuda/12.3' RESULTS_ROOT=results/athena K=3 BLOCK_SIZES='64 128 256' DATASETS='small medium large' REPS=3 \
+NVCCFLAGS='-O2 -std=c++11 --fmad=false -gencode arch=compute_80,code=sm_80' \
+sbatch --parsable --partition=gpu-a100 --qos=normal --gres=gpu:1 --nodes=1 --ntasks=1 --cpus-per-task=1 \
+  --job-name=athena-benchmark --time=00:30:00 --output=slurm/logs/athena/baseline-%j.log slurm/baseline_job.sh benchmark
+squeue -u "$USER"
+sacct -X -j JOBID --format=JobID,State,ExitCode,Elapsed,AllocTRES%60
+```
+
+After the benchmark, `python3 -I tools/audit_athena_results.py results/athena/baseline-DIRECTORY JOB1 JOB2 JOB3` recomputes counts, prediction comparisons, log agreement, summaries and Slurm states. See [ATHENA_BASELINE_RESULTS.md](../ATHENA_BASELINE_RESULTS.md) for results. The evidence archive is `../athena-baseline-evidence-20261022.tar.gz`, built by `tools/package_athena_results.py`.
+
+## Shared-memory strategy on Athena
+
+`./cuda train.arff test.arff k block [predictions.txt] [--strategy=global|shared] [--tile=rows]` selects the kernel. The default is global with a 256-row tile for shared. `STRATEGIES` (default `global`) and `TILE_ROWS` (default 256) select the same options for `verify_accuracy.sh` and `benchmark_baseline.py`. Athena jobs for this milestone use `bash slurm/athena/submit_athena_shared.sh small|verify|benchmark`, which runs both strategies and writes to `results/athena-shared/`. Run the three jobs in order and check each with `bash slurm/athena/monitor_athena.sh JOBID`. The audit command is `STRATEGIES='global shared' python3 -I tools/audit_athena_results.py results/athena-shared/baseline-DIRECTORY JOB1 JOB2 JOB3`. Results are in [ATHENA_SHARED_MEMORY_RESULTS.md](../ATHENA_SHARED_MEMORY_RESULTS.md), with evidence in `../athena-shared-memory-evidence-20261022.tar.gz`. For Maple, the same options apply with the Maple partition, account and modules, but the shared kernel has not been run there yet.
+
+## MPI+CUDA on Athena
+
+`make mpi_cuda` builds `mpi_cuda` and needs a loaded Open MPI module (`MPI_HOME` is set by it). Use `cuda/12.3` with `mpi/openmpi-4.1.6`, because `mpi/openmpi-4.1.8` loads a GCC that CUDA 12.3 does not support. The program takes the same arguments as `cuda` (`./mpi_cuda train.arff test.arff k block [predictions.txt] [--strategy=global|shared] [--tile=rows]`) and is launched with one rank per GPU. Layouts are written NODESxRANKS_PER_NODE, for example `1x4` or `2x2`.
+
+```bash
+# Verified settings. H100 needs sm_90, V100 sm_70 and A100 sm_80. athena534 failed step creation and two-node launches.
+GPU_MODEL=h100 EXCLUDE=athena534 GPUS=4 bash slurm/athena/submit_athena_mpi.sh verify      # 1 to 4 ranks, one node
+GPU_MODEL=h100 EXCLUDE=athena534 GPUS=4 LAYOUTS='1x1 1x2 1x4' bash slurm/athena/submit_athena_mpi.sh benchmark
+GPU_MODEL=v100 GPUS_PER_NODE=1 LAYOUTS='1x1 2x1' bash slurm/athena/submit_athena_mpi.sh multinode-verify
+bash slurm/athena/monitor_athena.sh JOBID
+GPU_NAME=H100 LAYOUTS='1x1 1x2 1x4' python3 -I tools/audit_mpi_cuda_results.py results/athena-mpi-h100/mpi-benchmark-DIRECTORY JOBID
+```
+
+Run jobs one at a time. Every job builds in this checkout and a concurrent job with a different GPU architecture can replace the binary. Evidence is written under `results/athena-mpi-h100`, `results/athena-mpi-v100` or `results/athena-mpi`, and logs under `slurm/logs/` with the same suffix. The scripts accept `LAYOUTS`, `GPUS`, `GPUS_PER_NODE`, `EXCLUDE` and `GPU_MODEL`. Results and the failed-job record are in [ATHENA_MPI_CUDA_RESULTS.md](../ATHENA_MPI_CUDA_RESULTS.md).
+
+## H100 single-GPU and CPU comparison on Athena
+
+```bash
+GPU_MODEL=h100 EXCLUDE=athena534 bash slurm/athena/submit_athena_shared.sh verify      # then benchmark
+bash slurm/athena/submit_athena_cpu.sh small      # then verify, then benchmark (CPU partition, 16 CPUs)
+python3 -I tools/audit_cpu_results.py results/athena-cpu/cpu-benchmark-DIRECTORY JOB1 JOB2 JOB3
+GPU_NAME=H100 STRATEGIES='global shared' python3 -I tools/audit_athena_results.py results/athena-shared-h100/baseline-DIRECTORY JOB1 JOB2
+```
+
+CPU jobs copy the sources into a private work directory under `results/athena-cpu/` and build there. The pthreads, OpenMP and MPI programs now print fractional milliseconds, count accuracy directly, accept an optional prediction file and match the serial boundary. Results are in [ATHENA_H100_SINGLE_GPU_RESULTS.md](../ATHENA_H100_SINGLE_GPU_RESULTS.md) and [ATHENA_CPU_RESULTS.md](../ATHENA_CPU_RESULTS.md). Archives are `athena-h100-single-gpu-evidence-20261023.tar.gz`, `athena-mpi-cuda-evidence-20261023.tar.gz` and `athena-cpu-evidence-20261023.tar.gz`, built by `tools/package_athena_extra_results.py h100|mpi|cpu [TAG]`.

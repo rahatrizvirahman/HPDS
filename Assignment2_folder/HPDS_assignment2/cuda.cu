@@ -1,72 +1,19 @@
-#include <cuda_runtime.h>
-#include <cfloat>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <limits>
 #include <vector>
 #include "libarff/arff_parser.h"
 #include "knn_io.h"
+#include "knn_cuda.cuh"
 
-static void check_cuda(cudaError_t status, const char* operation) {
-    if (status != cudaSuccess)
-        throw std::runtime_error(std::string(operation) + " failed, " + cudaGetErrorString(status));
-}
-#define CUDA_CHECK(operation) check_cuda((operation), #operation)
-
-static size_t checked_product(size_t a, size_t b) {
-    if (b && a > std::numeric_limits<size_t>::max() / b)
-        throw std::runtime_error("Allocation size overflow");
-    return a * b;
-}
-
-// Lecture 8 indexing, with one independent query assigned to each thread.
-__global__ void knn_global(const float* train, const float* test,
-                           int ntrain, int ntest, int attributes, int classes, int k,
-                           float* candidate_distance, int* candidate_label,
-                           int* votes, int* predictions) {
-    const size_t query = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (query >= static_cast<size_t>(ntest)) return;
-    float* distances = candidate_distance + query * k;
-    int* labels = candidate_label + query * k;
-    int* counts = votes + query * classes;
-    for (int c = 0; c < k; ++c) { distances[c] = FLT_MAX; labels[c] = -1; }
-    for (int c = 0; c < classes; ++c) counts[c] = 0;
-
-    for (int row = 0; row < ntrain; ++row) {
-        float sum = 0.0f;
-        for (int feature = 0; feature < attributes - 1; ++feature) {
-            float diff = test[query * attributes + feature] -
-                         train[static_cast<size_t>(row) * attributes + feature];
-            sum += diff * diff;
-        }
-        float distance = sqrtf(sum);
-        for (int c = 0; c < k; ++c) {
-            if (distance < distances[c]) {
-                for (int previous = k - 2; previous >= c; --previous) {
-                    distances[previous + 1] = distances[previous];
-                    labels[previous + 1] = labels[previous];
-                }
-                distances[c] = distance;
-                labels[c] = static_cast<int>(train[static_cast<size_t>(row) * attributes + attributes - 1]);
-                break;
-            }
-        }
-    }
-    for (int c = 0; c < k; ++c) {
-        // Detect distances too large to yield k finite candidates.
-        if (labels[c] < 0 || labels[c] >= classes) { predictions[query] = -1; return; }
-        ++counts[labels[c]];
-    }
-    int best_class = 0;
-    for (int c = 1; c < classes; ++c)
-        if (counts[c] > counts[best_class]) best_class = c;
-    predictions[query] = best_class;
-}
-
-int main(int argc, char** argv) try {
+int main(int raw_argc, char** raw_argv) try {
+    const CudaOptions options = parse_cuda_options(raw_argc, raw_argv);
+    const std::string strategy = options.strategy;
+    const int tile_rows = options.tile_rows;
+    const int argc = static_cast<int>(options.positional.size());
+    char** argv = const_cast<char**>(options.positional.data());
     if (argc != 5 && argc != 6) {
-        std::fprintf(stderr, "Usage: ./cuda train.arff test.arff k threads_per_block [predictions.txt]\n");
+        std::fprintf(stderr, "Usage: ./cuda train.arff test.arff k threads_per_block [predictions.txt] [--strategy=global|shared] [--tile=rows]\n");
         return 1;
     }
     const int k = positive_integer(argv[3]);
@@ -90,7 +37,13 @@ int main(int argc, char** argv) try {
     const size_t blocks = (static_cast<size_t>(ntest) + threads - 1) / threads;
     if (blocks > static_cast<size_t>(properties.maxGridSize[0]))
         throw std::runtime_error("Grid size exceeds device limit");
-    std::printf("GPU %s, visible_device=0, threads_per_block=%d\n", properties.name, threads);
+    const bool use_shared = strategy == "shared";
+    const size_t shared_bytes = use_shared ? checked_product(checked_product(tile_rows, attributes), sizeof(float)) : 0;
+    if (shared_bytes > properties.sharedMemPerBlock)
+        throw std::runtime_error("Tile exceeds the shared memory available to one block");
+    std::printf("GPU %s, visible_device=0, strategy=%s, threads_per_block=%d", properties.name, strategy.c_str(), threads);
+    if (use_shared) std::printf(", tile_rows=%d, shared_bytes=%zu", tile_rows, shared_bytes);
+    std::printf("\n");
 
     const size_t train_bytes = checked_product(checked_product(ntrain, attributes), sizeof(float));
     const size_t test_bytes = checked_product(checked_product(ntest, attributes), sizeof(float));
@@ -119,9 +72,14 @@ int main(int argc, char** argv) try {
     CUDA_CHECK(cudaEventCreate(&kernel_start));
     CUDA_CHECK(cudaEventCreate(&kernel_stop));
     CUDA_CHECK(cudaEventRecord(kernel_start));
-    knn_global<<<static_cast<unsigned int>(blocks), threads>>>(
-        device_train, device_test, ntrain, ntest, attributes, classes, k,
-        distances, labels, votes, device_predictions);
+    if (use_shared)
+        knn_shared<<<static_cast<unsigned int>(blocks), threads, shared_bytes>>>(
+            device_train, device_test, ntrain, ntest, attributes, classes, k, tile_rows,
+            distances, labels, votes, device_predictions);
+    else
+        knn_global<<<static_cast<unsigned int>(blocks), threads>>>(
+            device_train, device_test, ntrain, ntest, attributes, classes, k,
+            distances, labels, votes, device_predictions);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(kernel_stop));
     CUDA_CHECK(cudaEventSynchronize(kernel_stop));
@@ -149,8 +107,8 @@ int main(int argc, char** argv) try {
     float accuracy = 100.0f * correct / ntest;
     if (argc == 6) write_predictions(argv[5], predictions.data(), ntest);
     std::printf("The %d-NN classifier required %.6f ms. Accuracy was %.2f%%\n", k, elapsed_ms, accuracy);
-    std::printf("RESULT strategy=global end_to_end_ms=%.6f kernel_ms=%.6f accuracy=%.8f\n",
-                elapsed_ms, kernel_ms, accuracy);
+    std::printf("RESULT strategy=%s end_to_end_ms=%.6f kernel_ms=%.6f accuracy=%.8f\n",
+                strategy.c_str(), elapsed_ms, kernel_ms, accuracy);
     return 0;
 } catch (const std::exception& error) {
     // A failed run exits without emitting a RESULT record.

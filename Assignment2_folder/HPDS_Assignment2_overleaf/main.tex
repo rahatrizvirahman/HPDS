@@ -1,0 +1,151 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{amsmath,booktabs,longtable,graphicx}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\usepackage[hidelinks]{hyperref}
+\begin{document}
+\title{K-Nearest-Neighbor Classification with CUDA and MPI}
+\author{\IEEEauthorblockN{Rahat Rizvi Rahman}
+\IEEEauthorblockA{Department of Computer Science\\Virginia Commonwealth University\\Richmond, USA\\rahmanr12@vcu.edu}}
+\maketitle
+\begin{abstract}
+This report evaluates global-memory and shared-memory CUDA implementations of the KNN classifier and an MPI+CUDA extension. The same datasets and classification rules from Assignment 1 are retained. Archived evidence contains 342 completed benchmark runs across Maple, Athena A100 and H100 GPU nodes, and an Athena CPU node. Every measured prediction array matches the serial reference. On the large dataset, the best observed single-GPU configurations achieve same-sweep serial speedups of 21.44 on Maple, approximately 37.8 on the A100, and approximately 34.4 on the H100. These speedups have different host CPU baselines. Shared-memory tiling reduces runtime relative to the global kernel in every tested configuration of the paired Athena sweeps. MPI+CUDA correctness is verified on up to four H100 GPUs in one node and two V100 nodes, but repeated multi-GPU timing results are not available. This report distinguishes measured results, correctness-only evidence, and outstanding experiments.
+\end{abstract}
+\begin{IEEEkeywords}KNN, CUDA, shared memory, MPI, performance measurement\end{IEEEkeywords}
+
+\section{Introduction}
+K-nearest-neighbor classification compares a test query with all training instances, retains the closest $k$ neighbors, and predicts their most frequent label. The independent test queries provide a direct decomposition for parallel execution. Assignment 2 extends the Assignment 1 CPU implementations using CUDA and MPI+CUDA. The design uses the supplied lectures on thread indexing, memory transfers, memory access, shared-memory tiling, and multi-GPU coordination \cite{cuda8,cuda9,cuda10,cuda13,mpi6}.
+
+The experimental questions are whether GPU classification reduces complete classification time, whether reusing training rows through shared memory improves the global-memory baseline, and how block size affects the observed means. A separate MPI implementation establishes correctness across devices and nodes. Repeated multi-GPU scaling remains an uncompleted experiment in the evidence available for this report.
+
+\textbf{Evidence cutoff.} This report uses results committed through \texttt{7ef8264}, with experiment records dated October 22--23, 2026. It is a report of available evidence as of that snapshot. A queued job's status is not a live observation and may change after the snapshot. The missing Maple shared-memory measurements and timed MPI+CUDA sweep are explicitly identified below.
+
+\section{Methodology}
+\subsection{Datasets and serial reference}
+The original ARFF datasets and parser are reused without preprocessing changes. The class column is excluded from distance computation. All measured experiments use $k=3$, float accumulation in the original feature order, and Euclidean distance including the square root.
+\begin{table}[t]\centering
+\caption{Dataset sizes and reference accuracy. Features exclude the class label.}\label{tab:data}
+\small\begin{tabular}{lrrrr}\toprule
+Dataset & Train & Test & Features & Accuracy (\%)\\\midrule
+Small & 1,184 & 160 & 7 & 85.000000\\
+Medium & 14,708 & 740 & 11 & 27.567568\\
+Large & 61,606 & 3,436 & 11 & 99.476135\\\bottomrule
+\end{tabular}\end{table}
+Training rows are scanned in their original order. A candidate replaces an entry only when its distance is strictly smaller, preserving earlier training rows in equal-distance ties. A tied class vote selects the smallest class index. The medium dataset's relatively low accuracy is the unchanged reference outcome, not an introduced GPU discrepancy. With insertion-based selection, work is approximately $O(N_qN_t(d+k))$ for $N_q$ queries, $N_t$ training rows, and $d$ features.
+
+\subsection{Global-memory CUDA kernel}
+One CUDA thread handles one test query. Its index follows the lecture grid/block mapping. The thread scans all training rows, maintains a sorted top-$k$ candidate list, counts class votes, and writes one prediction. Candidate distances, labels, and vote counters occupy distinct per-query slices of global-memory workspace. They are private by ownership, not by memory placement. The host flattens the matrices, allocates device buffers, transfers inputs, launches the kernel, and retrieves predictions. Out-of-range query threads return without doing work.
+
+\subsection{Shared-memory CUDA kernel}
+The second kernel retains the query-to-thread mapping and candidate-selection helpers. A block cooperatively loads a tile of training rows into dynamic shared memory. Adjacent threads load adjacent flattened elements using a stride equal to block size. After a barrier, active query threads scan the tile in training-row order; a second barrier precedes replacement of the tile. Inactive threads in a partial query block still participate in both barriers. Partial training tiles load and scan only valid rows.
+
+The tile is fixed at 256 training rows. Including the class column, the small dataset requires 8,192 shared bytes per block and the other datasets require 12,288 bytes. Only training-row storage changes; candidate lists and votes remain in global memory. The approach follows the shared-memory reuse examples in Lecture 10 \cite{cuda10}. Tile size is not swept, so results do not identify its optimum.
+
+\subsection{MPI+CUDA decomposition}
+Each MPI rank uses one allocated GPU. Node-local rank and visible device count determine device selection, and a UUID check rejects accidental sharing of the same GPU by multiple ranks. Rank $r$ of $P$ handles the half-open test interval
+\begin{equation}
+[\lfloor rN_q/P\rfloor,\ \lfloor(r+1)N_q/P\rfloor).
+\end{equation}
+Each rank retains the full training matrix and transfers its own query range to its GPU. Both CUDA kernels are shared with the single-GPU program. Local predictions return to host memory and \texttt{MPI\_Gatherv} restores the global query order on rank zero. Empty ranges skip the GPU launch but participate in communication. Exceptions abort the MPI job to prevent other ranks waiting indefinitely. This adapts the supplied multi-host CUDA example and MPI material \cite{cuda13,mpi6}.
+
+\subsection{CPU comparisons and timing}
+The serial, pthreads, OpenMP, and CPU MPI programs retain the same query decomposition and decision rule. CPU parallel worker counts are 1, 2, 4, 8, and 16. The CPU MPI study uses one node. Each configuration is measured three times, using a fresh process with no explicit warm-up. CUDA block sizes are 64, 128, and 256. Both strategies are tested in the paired A100 and H100 sweeps.
+
+The primary timer measures classification after ARFF parsing. It includes matrix flattening, workspace allocation, GPU transfers, kernel execution, prediction retrieval, and workspace cleanup. Parsing, validation, device discovery, accuracy calculation, and prediction-file output are excluded. Returned predictions remain allocated at the end of the timer. Thus ``end-to-end'' refers to classification, not whole-process or file-to-output elapsed time. CPU timers use the corresponding classification boundary. MPI timers exclude MPI initialization and launcher overhead, start after a barrier, include result gathering, and report the maximum rank duration. GPU kernel time uses synchronized CUDA events \cite{cuda9}.
+
+For each single-GPU sweep, speedup is
+\begin{equation}
+S_{\mathrm{serial}}=\frac{\overline{T}_{\mathrm{serial,same\ sweep}}}{\overline{T}_{\mathrm{GPU,classification}}}.
+\end{equation}
+Kernel-only times are never substituted in the denominator. For a timed MPI+CUDA sweep, the intended definitions are $S_g=\overline{T}_{\mathrm{MPI+CUDA}}(1)/\overline{T}_{\mathrm{MPI+CUDA}}(g)$ and $E_g=S_g/g$. These values are not computed without repeated scaling measurements. CPU relative efficiency uses the same CPU program at one worker as its baseline, divided by worker count.
+
+\subsection{Environment and reproducibility}
+\begin{table*}[t]\centering
+\caption{Experimental environments. Times from different rows are never pooled.}\label{tab:hardware}
+\small\begin{tabular}{llll}\toprule
+Platform/node & GPU & Host CPU & Evidence\\\midrule
+Maple & GTX 1080 Ti, 11 GiB & Xeon E5-2690 v4 & Global baseline\\
+Athena 521 & A100-SXM4-80GB & AMD EPYC 7763 & Global baseline and paired sweep\\
+Athena 533 & H100 80GB HBM3 & Xeon Platinum 8462Y+ & Paired sweep; 1--2 GPU verification\\
+Athena 531 & H100 80GB HBM3 & Xeon Platinum 8480CL & 1--4 GPU verification\\
+Athena 513/514 & V100 & Not used for CPU timing comparisons & Two-node correctness only\\
+Athena 201 & None & AMD EPYC 7742 & CPU comparison, 16 allocated CPUs\\\bottomrule
+\end{tabular}\end{table*}
+All computation was scheduled through Slurm. GPU sweeps requested one GPU and one CPU. The CPU sweep used 16 allocated CPUs on a nonexclusive node without explicit thread pinning. CUDA toolkit 12.3.107 and GCC 11.4 were used for GPU builds; CPU comparison used GCC 11.4.1 and Open MPI 4.1.6. CPU flags include \texttt{-O2 -std=c++11 -ffp-contract=off}, and CUDA flags include \texttt{-O2 -std=c++11 --fmad=false}. A100, H100, and V100 builds target \texttt{sm\_80}, \texttt{sm\_90}, and \texttt{sm\_70}; the original Maple build did not specify an architecture flag. Fast math is not enabled.
+
+The source snapshots and patches identify the code used by each sweep. The initial A100 baseline predates the shared-helper refactor; its measurements are retained separately from the paired comparison. Compile jobs targeting different GPU architectures must run sequentially when using a shared checkout. An earlier concurrent H100/V100 build was followed by a missing-kernel-image failure, consistent with the binary being replaced. A sequential rerun passed.
+
+\section{Results}
+\subsection{Correctness and completed measurements}
+All 342 measured prediction arrays match their serial references byte for byte. The evidence comprises 36 Maple baseline runs, 36 initial A100 baseline runs, 63 paired A100 runs, 63 paired H100 runs, and 144 CPU runs. Every group has three repetitions. Archive checksums and all 7,025 manifest entries were checked; CSV values match individual logs, and summary statistics and label-based accuracy were recomputed. The appendix gives every individual classification time and mean.
+
+Synthetic verification exercises neighbor ties, vote ties, runtime $k$, invalid arguments, partial query blocks, and partial training tiles. MPI tests add uneven and empty rank ranges, rank/device mapping, and injected-rank failure. Dedicated MPI dataset comparisons were independently checked for full prediction equality, distinct host/device assignments, and complete query coverage.
+
+\input{data/best.tex}
+\input{data/gpu_plot.tex}
+\subsection{Single-GPU configurations}
+Table~\ref{tab:best} reports the lowest observed means, and Fig.~\ref{fig:gpu} compares block sizes on the large dataset. The Maple global kernel reaches 21.44 times its own serial baseline on large, but the small dataset is slower on the GPU. The paired A100 and H100 sweeps contain both strategies at all block sizes on all datasets. Within each sweep, shared-memory classification is faster than the global kernel at every matched block size. Ratios of global to shared time range approximately from 1.10 to 1.28 on A100 and 1.02 to 1.17 on H100.
+
+At block 128 on large, shared-memory classification takes approximately 52.589 ms on A100 and 42.479 ms on H100. Their host serial means differ, approximately 1987.5 ms and 1459.9 ms respectively, so their speedup values do not isolate GPU hardware differences. The best observed block size also depends on dataset and device. All tested small-dataset GPU configurations remain slower than the same-sweep serial reference.
+
+\input{data/cpu_best.tex}
+\input{data/cpu_plot.tex}
+\input{data/cross.tex}
+\subsection{CPU and GPU comparisons}
+Table~\ref{tab:cpu} reports the fastest observed configuration for each CPU program and dataset, including its three-run range. Fig.~\ref{fig:cpu} shows large-dataset CPU scaling. At 16 MPI ranks, large takes 241.172 ms versus a serial mean of 2594.672 ms on the CPU node, a speedup of 10.76. The corresponding H100 shared-kernel mean is 42.479 ms.
+
+Table~\ref{tab:cross} explicitly compares the separate 16-CPU allocation with one H100. It includes serial, pthreads, OpenMP, and CPU MPI. These are cross-platform time ratios, not controlled same-host CPU/GPU speedups. GPU performance is not uniformly better; the small-dataset CPU MPI mean at 16 ranks is approximately 0.476 ms, below the H100 classification mean of 1.174 ms.
+
+\subsection{MPI+CUDA correctness and missing timings}
+\begin{table}[t]\centering
+\caption{Completed MPI+CUDA dataset verification. Counts cover three datasets, both kernels, and three block sizes per layout. These are correctness runs, not repeated timing experiments.}\label{tab:mpi}
+\small\begin{tabular}{llll}\toprule
+Job & GPU & Node/rank layouts & Matches\\\midrule
+3382992 & H100 & 1 node, 1/2 ranks & 36/36\\
+3382997 & H100 & 1 node, 1/2/3/4 ranks & 72/72\\
+3382990 & V100 & 1/2 nodes, 1 GPU/node & 36/36\\\bottomrule
+\end{tabular}\end{table}
+Multi-GPU and two-node allocations were obtained for verification (Table~\ref{tab:mpi}). They establish functional correctness of the delivered MPI+CUDA implementation. Their unrepeated timing prints do not establish scaling or efficiency and are not used as benchmark rows.
+
+The timed H100 scaling job, 3383610, was submitted to request four GPUs on one node and test 1, 2, and 4 GPUs, all datasets, and three repetitions. The saved handoff reports it still queued at the October 23 evidence cutoff because a suitable allocation was unavailable. No benchmark output for it is included. Submission history is archived, but a raw current queue/accounting snapshot for this pending job is absent from the supplied bundle. Its current state must therefore be refreshed before final submission. No multi-GPU speedup or efficiency is reported.
+
+\section{Analysis}
+Shared-memory tiling permits each block to reuse training data after cooperative loading, consistent with the lecture's reuse argument. The measured reduction in classification time supports this strategy for the tested configurations. Without profiling, however, the experiments do not isolate memory traffic, cache behavior, or occupancy as the cause. Synchronization overhead and global-memory candidate storage remain part of the implementation.
+
+Available query parallelism is limited. The small dataset has only 160 queries, which produces two blocks at block size 128. The large dataset produces 27 such blocks from 3436 queries. Splitting queries over more GPUs reduces the queries on each GPU while every query still scans the full training set. This makes weak scaling gains plausible, but only the pending repeated benchmark can establish the actual multi-GPU trend. A verification kernel time is not substituted for that experiment.
+
+Fixed classification overhead also matters. On H100, large/shared/block-128 spends approximately 35 ms in its kernel versus 42.479 ms in the complete classification region. The gap includes transfers, allocation, and other host/device work, but the experiments do not separately time each component. This is why kernel-only speedup would exaggerate the observed benefit.
+
+CPU scaling improves clearly through several worker counts, but the means and variation must be read together. On large, pthreads improves from 507.642 ms at eight threads to 465.712 ms at sixteen, while OpenMP changes only from 539.394 to 535.541 ms. On medium both slow down at sixteen. Lack of pinning, scheduling, and shared-node activity are possible contributors, not measured explanations. Serial large on the CPU node ranges from 2313.991 to 3153.929 ms, so its mean-based speedups carry substantial uncertainty.
+
+\subsection{Resource and coverage limitations}
+The missing evidence has specific boundaries. Maple has only the original global-memory sweep; the shared-memory implementation still needs verification and a paired global/shared benchmark there. Athena has complete single-GPU paired measurements and CPU comparisons, but no completed repeated multi-GPU or multi-node timing study in the supplied evidence.
+
+An earlier four-A100 request, 3382607, was cancelled after the submission history records more than 18 hours pending. H100 launch attempts involving \texttt{athena534} also failed with Slurm/PMIx communication and TRES errors. V100 two-node verification subsequently passed, so these failures do not show that all multi-node execution on Athena is unavailable. Other failed attempts involved a corrected launcher-template bug and the suspected build collision. These software failures are distinguished from allocation delays.
+
+Only three repetitions, three block sizes, and one tile size were tested. No randomization, warm-up study, or profiler analysis was performed. No confidence interval or universally optimal configuration is claimed. The A100 global baseline and paired sweep differ by several percent on large and remain separate experiments. Hardware differences preclude pooling results across Maple, GPU nodes, and the CPU comparison node. Historical Assignment 1 timings used different flags and timer precision and are excluded.
+
+\section{Conclusion}
+The completed evidence establishes correct single-GPU CUDA classification for both kernels on Athena and for the global baseline on Maple, plus MPI+CUDA correctness across up to four GPUs and two nodes. Shared-memory training tiles improve the tested Athena configurations, and medium and large datasets benefit from GPU classification relative to their same-sweep serial baselines. The small dataset does not show this benefit.
+
+The current report does not claim completion of the repeated multi-GPU scaling requirement. The remaining work is the Maple shared-memory sweep and the queued Athena timing experiment, followed by an updated report if results arrive. If the timed allocation remains unavailable at submission, retain this explicit limitation and a dated queue/accounting snapshot. Resource documentation explains missing measurements but does not replace them.
+
+\begin{thebibliography}{6}
+\bibitem{cuda8} CMSC 603 lecture materials, ``8. Introduction to CUDA,'' pp. 9--16, supplied course PDF and vector-add example.
+\bibitem{cuda9} CMSC 603 lecture materials, ``9. CUDA memory access pattern,'' pp. 2--11, supplied course PDF and matrix-add example.
+\bibitem{cuda10} CMSC 603 lecture materials, ``10. CUDA shared memory,'' pp. 2--10, supplied course PDF and tiled matrix multiplication examples.
+\bibitem{cuda13} CMSC 603 lecture materials, ``13. CUDA asynchronous streams and multi-GPU,'' pp. 17--25, and supplied \texttt{vectorAdd\_multihost\_multiGPU.cu}.
+\bibitem{mpi6} CMSC 603 lecture materials, ``6. MPI,'' supplied slides and collective communication examples.
+\bibitem{slurm2} CMSC 603 lecture materials, ``2. Slurm for HPC clusters,'' supplied course PDF.
+\end{thebibliography}
+
+\clearpage\onecolumn
+\appendices
+\section{Individual Measurements and Averages}
+Every row contains three independent process invocations. Classification times and kernel means are in milliseconds. GPU speedup uses the serial mean from that same sweep. CPU speedup uses the CPU-node serial mean; CPU efficiency uses the same parallel program at one worker divided by worker count. Kernel means are unavailable for serial rows. Missing experiments are omitted rather than filled with zeros or verification timings. Machine and sweep labels must remain attached to each table.
+\input{data/all_runs.tex}
+\section{Evidence and Reproduction}
+The accompanying Overleaf project includes audited raw and summary CSV copies, audit metadata, and generation scripts. The six evidence archives remain in Assignment2\_folder, each with an external SHA-256 and internal manifest. The offline audit verifies archive hashes, log/CSV agreement, prediction equality, dataset accuracy, and summary arithmetic without executing archived code. The MPI archive additionally supports 144 full-dataset prediction checks with unique device assignments and ordered query coverage. No live cluster access is used in this report audit.
+
+For single-GPU runs, the submitted Slurm scripts build serial and CUDA executables before verification or benchmarking. CUDA accepts the original input paths and k, followed by block size and optional strategy/tile options. MPI+CUDA builds separately with the loaded Open MPI module. Exact platform-specific submission commands and source patches are retained with the evidence. Shared-memory and MPI work use the same kernel helpers. New output must be stored separately by platform and sweep.
+\end{document}

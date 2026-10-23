@@ -1,0 +1,19 @@
+\begin{table}[t]
+\centering\caption{CPU configurations with lowest observed mean, EPYC 7742. Range spans three runs.}\label{tab:cpu}
+\small\setlength{\tabcolsep}{3pt}\begin{tabular}{llrrrr}\toprule
+Data & Program & Workers & Mean & Min & Max \\
+\midrule
+small & serial & 1 & 2.839 & 2.827 & 2.860 \\
+small & pthreads & 8 & 1.559 & 1.246 & 1.830 \\
+small & openmp & 4 & 1.354 & 1.303 & 1.431 \\
+small & mpi & 16 & 0.476 & 0.356 & 0.579 \\
+medium & serial & 1 & 198.469 & 198.331 & 198.654 \\
+medium & pthreads & 8 & 34.326 & 28.402 & 45.595 \\
+medium & openmp & 8 & 29.403 & 29.094 & 29.780 \\
+medium & mpi & 16 & 18.041 & 17.749 & 18.543 \\
+large & serial & 1 & 2594.672 & 2313.991 & 3153.929 \\
+large & pthreads & 16 & 465.712 & 405.054 & 548.117 \\
+large & openmp & 16 & 535.541 & 527.790 & 541.068 \\
+large & mpi & 16 & 241.172 & 228.142 & 262.670 \\
+\bottomrule\end{tabular}
+\end{table}

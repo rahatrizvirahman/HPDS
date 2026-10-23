@@ -27,3 +27,7 @@ GPU multiply/add fusion can change rounding. The Makefile disables contraction f
 ## What this version does not establish yet
 
 This version does not use shared memory or MPI. Small datasets may provide too few queries to keep the GPU busy, and transfer/allocation costs may outweigh faster distance computation. We need measurements before deciding whether any configuration is faster than the CPU.
+
+## Athena notes
+
+The kernel needed no change on the A100. Block 64 had the lowest mean time on every dataset, while on Maple blocks 128 and 64 won different datasets. With three repetitions this is a baseline observation, not an explanation. The Athena build adds `-gencode arch=compute_80,code=sm_80`. Without a named architecture, nvcc 12.3 embeds code for an older target plus PTX, and the driver may compile that PTX at the first launch, which could land inside the timed kernel. The flag was added as a precaution. It was not compared against a build without it, so its effect is unmeasured.
