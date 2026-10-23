@@ -11,6 +11,8 @@ import sys
 DATASETS = ("small", "medium", "large")
 # STRATEGIES (default global) names the CUDA strategies the sweep was expected to contain.
 STRATEGIES = os.environ.get("STRATEGIES", "global").split()
+# GPU_NAME (default A100) is the text every CUDA log must contain, so mixed hardware is rejected.
+GPU_NAME = os.environ.get("GPU_NAME", "A100")
 CONFIGS = [("serial", 0)] + [(s, b) for s in STRATEGIES for b in (64, 128, 256)]
 
 
@@ -46,7 +48,7 @@ def main(directory, jobs):
         assert record.get("kernel_ms", "") == row["kernel_ms"], stem
         assert row["predictions_match"] == "yes" and row["k"] == "3", stem
         if row["strategy"] != "serial":
-            assert "A100" in text, stem
+            assert GPU_NAME in text, stem
     out.append(f"All {len(rows)} prediction files are byte-identical to the dataset's serial reference")
     out.append(f"All {len(rows)} CSV rows equal the RESULT records in their individual logs")
     # Recompute summaries.

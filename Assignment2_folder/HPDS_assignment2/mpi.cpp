@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <bits/stdc++.h>
+#include <chrono>
+#include "knn_io.h"
 #include "libarff/arff_parser.h"
 #include "libarff/arff_data.h"
 #include "mpi.h"
@@ -112,82 +114,61 @@ int* KNN(ArffData* train, ArffData* test, int k, int mpi_rank, int mpi_num_proce
     return predictions;
 }
 
-int* computeConfusionMatrix(int* predictions, ArffData* dataset)
+static int run(int argc, char *argv[], int mpi_rank, int mpi_num_processes)
 {
-    int* confusionMatrix = (int*)calloc(dataset->num_classes() * dataset->num_classes(), sizeof(int)); // matrix size numberClasses x numberClasses
-    
-    for(int i = 0; i < dataset->num_instances(); i++) { // for each instance compare the true class and predicted class    
-        int trueClass = dataset->get_instance(i)->get(dataset->num_attributes() - 1)->operator int32();
-        int predictedClass = predictions[i];
-        
-        confusionMatrix[trueClass*dataset->num_classes() + predictedClass]++;
-    }
-    
-    return confusionMatrix;
-}
-
-float computeAccuracy(int* confusionMatrix, ArffData* dataset)
-{
-    int successfulPredictions = 0;
-    
-    for(int i = 0; i < dataset->num_classes(); i++) {
-        successfulPredictions += confusionMatrix[i*dataset->num_classes() + i]; // elements in the diagonal are correct predictions
-    }
-    
-    return 100 * successfulPredictions / (float) dataset->num_instances();
-}
-
-int main(int argc, char *argv[])
-{
-    if(argc != 4)
-    {
-        printf("Usage: ./program datasets/train.arff datasets/test.arff k");
-        exit(0);
-    }
+    if(argc != 4 && argc != 5)
+        throw std::runtime_error("Usage: ./mpi train.arff test.arff k [predictions.txt]");
 
     // k value for the k-nearest neighbors
-    int k = strtol(argv[3], NULL, 10);
-
-    int mpi_rank, mpi_num_processes;
-    MPI_Init(&argc,&argv);
-    MPI_Comm_rank (MPI_COMM_WORLD, &mpi_rank);
-    MPI_Comm_size (MPI_COMM_WORLD, &mpi_num_processes);
+    int k = positive_integer(argv[3]);
 
     // Every rank parses its own copy, before the timer starts
     ArffParser parserTrain(argv[1]);
     ArffParser parserTest(argv[2]);
     ArffData *train = parserTrain.parse();
     ArffData *test = parserTest.parse();
-    
-    struct timespec start, end;
-    int* predictions = NULL;
+    validate_datasets(train, test, k);
 
     // Sync ranks before starting the clock so an early finisher doesn't
     // count its wait inside MPI_Gatherv as compute time
     MPI_Barrier(MPI_COMM_WORLD);
+    auto start = std::chrono::steady_clock::now();
+    int* predictions = KNN(train, test, k, mpi_rank, mpi_num_processes);
+    auto end = std::chrono::steady_clock::now();
 
-    // Initialize time measurement
-    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-    
-    predictions = KNN(train, test, k, mpi_rank, mpi_num_processes);
-    
-    // Stop time measurement
-    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+    // Report the slowest rank, as for the MPI+CUDA program
+    double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
+    double max_time_ms = 0;
+    MPI_Reduce(&time_ms, &max_time_ms, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
     if (mpi_rank == 0) {
-        // Compute the confusion matrix
-        int* confusionMatrix = computeConfusionMatrix(predictions, test);
-        // Calculate the accuracy
-        float accuracy = computeAccuracy(confusionMatrix, test);
-
-        uint64_t time_difference = (1000000000L * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec) / 1e6;
-
-        printf("The %i-NN classifier for %lu test instances and %lu train instances required %llu ms CPU time for MPI with %d processes. Accuracy was %.2f%%\n", k, test->num_instances(), train->num_instances(), (long long unsigned int) time_difference, mpi_num_processes, accuracy);
-
-        free(confusionMatrix);
+        int correct = 0;
+        for (int row = 0; row < test->num_instances(); ++row)
+            if (predictions[row] == test->get_instance(row)->get(test->num_attributes() - 1)->operator int32())
+                ++correct;
+        float accuracy = 100.0f * correct / test->num_instances();
+        if (argc == 5) write_predictions(argv[4], predictions, test->num_instances());
+        printf("The %d-NN classifier required %.6f ms with %d processes. Accuracy was %.2f%%\n", k, max_time_ms, mpi_num_processes, accuracy);
+        printf("RESULT strategy=mpi workers=%d end_to_end_ms=%.6f accuracy=%.8f\n", mpi_num_processes, max_time_ms, accuracy);
     }
 
     free(predictions);
+    return 0;
+}
 
+int main(int argc, char *argv[])
+{
+    MPI_Init(&argc, &argv);
+    int mpi_rank, mpi_num_processes;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_num_processes);
+    try {
+        run(argc, argv, mpi_rank, mpi_num_processes);
+    } catch (const std::exception& error) {
+        // Abort so a failed rank cannot leave the others waiting in a collective
+        fprintf(stderr, "rank %d: %s\n", mpi_rank, error.what());
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     MPI_Finalize();
+    return 0;
 }
