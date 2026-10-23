@@ -1,0 +1,10 @@
+\begin{table}[t]
+\centering\caption{Cross-platform CPU/GPU time ratios. CPU uses EPYC 7742 (16 workers for parallel programs); GPU uses H100 with Xeon 8462Y+ host. Ratios are not same-machine speedups.}\label{tab:cross}
+\small\setlength{\tabcolsep}{3pt}\begin{tabular}{lrrrrr}\toprule
+Data & GPU ms & Serial & Pthreads & OpenMP & MPI \\
+\midrule
+small & 1.174 & 2.42 & 2.25 & 54.97 & 0.41 \\
+medium & 10.261 & 19.34 & 3.93 & 7.64 & 1.76 \\
+large & 42.479 & 61.08 & 10.96 & 12.61 & 5.68 \\
+\bottomrule\end{tabular}
+\end{table}

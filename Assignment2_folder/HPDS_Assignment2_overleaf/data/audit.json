@@ -1,0 +1,44 @@
+[
+  {
+    "archive": "athena-baseline-evidence-20261022.tar.gz",
+    "sha256": "d0b94d20ab0053d17dbbade06799c53b07cbcade3f7499cf9df3e8c9be2f23b2",
+    "manifest_files": 444,
+    "benchmark_rows": 36,
+    "groups": 12
+  },
+  {
+    "archive": "athena-cpu-evidence-20261023.tar.gz",
+    "sha256": "29e8cad60dcd6571e6bf754acd7972220f16fed415275e1b14f274a6347b5eb6",
+    "manifest_files": 1345,
+    "benchmark_rows": 144,
+    "groups": 48
+  },
+  {
+    "archive": "athena-h100-single-gpu-evidence-20261023.tar.gz",
+    "sha256": "cbc51c9e307164c26714a5dabfd68a477dade08316c97b202309dd66447fdff3",
+    "manifest_files": 784,
+    "benchmark_rows": 63,
+    "groups": 21
+  },
+  {
+    "archive": "athena-mpi-cuda-evidence-20261023.tar.gz",
+    "sha256": "03932a896e65fb757359983fb2945e8200956e477393a619a4c7b55b5eac0bf7",
+    "manifest_files": 2824,
+    "benchmark_rows": 0,
+    "groups": 0
+  },
+  {
+    "archive": "athena-shared-memory-evidence-20261022.tar.gz",
+    "sha256": "3f50c9f848410471de0c20811ebeccd36ad7b43a48234c7b445511c563b72bf2",
+    "manifest_files": 1336,
+    "benchmark_rows": 63,
+    "groups": 21
+  },
+  {
+    "archive": "maple-baseline-evidence-20261022.tar.gz",
+    "sha256": "8d7ecab64f081f1aee2f7b6f1ff951d9036077014faa2d61f9625e5bdb4a1e62",
+    "manifest_files": 292,
+    "benchmark_rows": 36,
+    "groups": 12
+  }
+]
