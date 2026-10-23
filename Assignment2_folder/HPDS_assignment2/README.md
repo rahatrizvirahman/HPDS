@@ -1,6 +1,6 @@
 # Assignment 2 CUDA KNN
 
-This folder holds a serial reference, a single-GPU CUDA program with global-memory and shared-memory kernels, an MPI+CUDA program, and the CPU comparison programs. Maple has baseline (global-memory) results. Athena has A100 and H100 single-GPU results, CPU comparison results and MPI+CUDA correctness verification. The timed multi-GPU scaling benchmark on Athena, shared-memory and MPI+CUDA runs on Maple, and the Overleaf report remain outstanding. See [REPORT_HANDOFF.md](../REPORT_HANDOFF.md) for the current state and [ASSIGNMENT2_PLAN.md](../ASSIGNMENT2_PLAN.md) for the plan.
+This folder holds a serial reference, a single-GPU CUDA program with global-memory and shared-memory kernels, an MPI+CUDA program, and the CPU comparison programs. Maple has the original global-memory baseline and a completed paired global/shared sweep. Athena has A100 and H100 single-GPU results, CPU comparison results and MPI+CUDA correctness verification. See NEXT_STEPS.md for remaining MPI timing and report-update work; no Maple multi-GPU run is claimed. See [REPORT_HANDOFF.md](../REPORT_HANDOFF.md) for the current state and [ASSIGNMENT2_PLAN.md](../ASSIGNMENT2_PLAN.md) for the plan.
 
 The supplied datasets and parser are unchanged. Historical Assignment 1 results, scripts, and report are preserved in [Reference_assignment1](../Reference_assignment1/). They are not Assignment 2 results.
 
@@ -183,7 +183,7 @@ After the benchmark, `python3 -I tools/audit_athena_results.py results/athena/ba
 
 ## Shared-memory strategy on Athena
 
-`./cuda train.arff test.arff k block [predictions.txt] [--strategy=global|shared] [--tile=rows]` selects the kernel. The default is global with a 256-row tile for shared. `STRATEGIES` (default `global`) and `TILE_ROWS` (default 256) select the same options for `verify_accuracy.sh` and `benchmark_baseline.py`. Athena jobs for this milestone use `bash slurm/athena/submit_athena_shared.sh small|verify|benchmark`, which runs both strategies and writes to `results/athena-shared/`. Run the three jobs in order and check each with `bash slurm/athena/monitor_athena.sh JOBID`. The audit command is `STRATEGIES='global shared' python3 -I tools/audit_athena_results.py results/athena-shared/baseline-DIRECTORY JOB1 JOB2 JOB3`. Results are in [ATHENA_SHARED_MEMORY_RESULTS.md](../ATHENA_SHARED_MEMORY_RESULTS.md), with evidence in `../athena-shared-memory-evidence-20261022.tar.gz`. For Maple, the same options apply with the Maple partition, account and modules, but the shared kernel has not been run there yet.
+`./cuda train.arff test.arff k block [predictions.txt] [--strategy=global|shared] [--tile=rows]` selects the kernel. The default is global with a 256-row tile for shared. `STRATEGIES` (default `global`) and `TILE_ROWS` (default 256) select the same options for `verify_accuracy.sh` and `benchmark_baseline.py`. Athena jobs for this milestone use `bash slurm/athena/submit_athena_shared.sh small|verify|benchmark`, which runs both strategies and writes to `results/athena-shared/`. Run the three jobs in order and check each with `bash slurm/athena/monitor_athena.sh JOBID`. The audit command is `STRATEGIES='global shared' python3 -I tools/audit_athena_results.py results/athena-shared/baseline-DIRECTORY JOB1 JOB2 JOB3`. Results are in [ATHENA_SHARED_MEMORY_RESULTS.md](../ATHENA_SHARED_MEMORY_RESULTS.md), with evidence in `../athena-shared-memory-evidence-20261022.tar.gz`. Maple verification and the paired 63-measurement sweep completed in jobs 1560 and 1561. See [MAPLE_SHARED_MEMORY_RESULTS.md](../MAPLE_SHARED_MEMORY_RESULTS.md).
 
 ## MPI+CUDA on Athena
 
@@ -210,3 +210,9 @@ GPU_NAME=H100 STRATEGIES='global shared' python3 -I tools/audit_athena_results.p
 ```
 
 CPU jobs copy the sources into a private work directory under `results/athena-cpu/` and build there. The pthreads, OpenMP and MPI programs now print fractional milliseconds, count accuracy directly, accept an optional prediction file and match the serial boundary. Results are in [ATHENA_H100_SINGLE_GPU_RESULTS.md](../ATHENA_H100_SINGLE_GPU_RESULTS.md) and [ATHENA_CPU_RESULTS.md](../ATHENA_CPU_RESULTS.md). Archives are `athena-h100-single-gpu-evidence-20261023.tar.gz`, `athena-mpi-cuda-evidence-20261023.tar.gz` and `athena-cpu-evidence-20261023.tar.gz`, built by `tools/package_athena_extra_results.py h100|mpi|cpu [TAG]`.
+
+## Completed Maple paired global/shared sweep
+
+Jobs 1560 (verification) and 1561 (benchmark) completed with exit 0:0 on October 23, 2026. All 18 verification comparisons and all 63 measured prediction files matched serial. Both numeric and supplementary evidence audits passed. The exact submission commands, all three repetitions, means, kernel times, and speedups are in [MAPLE_SHARED_MEMORY_RESULTS.md](../MAPLE_SHARED_MEMORY_RESULTS.md).
+
+Working evidence is isolated under `results/maple-shared/` and `slurm/logs/maple-shared/`. The transfer archive is `../maple-shared-memory-evidence-20261023.tar.gz`, with an adjacent SHA-256 file and an internal path/hash manifest. `tools/package_maple_shared_results.py` builds it without leaving a duplicate extracted bundle or overwriting an existing archive. `tools/audit_maple_shared_evidence.py` supplements the general numeric audit with checks specific to jobs 1560 and 1561. The original Maple and Athena evidence remains unchanged.

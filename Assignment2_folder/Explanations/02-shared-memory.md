@@ -25,3 +25,9 @@ On the Athena A100 the shared kernel was faster than the global kernel for every
 ## Pitfall found while testing
 
 A tile of 1 or 3 rows against 4 training rows is the cheapest way to hit partial tiles and many tile passes. The synthetic test in `tests/check_predictions.py` uses these, with block sizes of 1 and 2 to leave the last query block partial, since the real datasets rarely hit those edge cases.
+
+## Maple measurements
+
+Maple verified both strategies with the current source in job 1560, then measured them together in job 1561. The paired sweep has 9 serial and 54 CUDA runs, with all predictions matching serial. Shared memory had lower mean end-to-end time at every matching block size. On large at block 128, global averaged 117.600805 ms and shared averaged 111.550108 ms. This is a modest improvement despite reusing the training tile, because candidate buffers still use global memory and each query still scans all training rows in order. That explanation follows the memory-access design; no profiler was used to establish the cost breakdown.
+
+The best shared mean was 111.355546 ms on large at block 64, giving 21.5500 times speedup against this sweep's 2399.713640 ms serial mean. Small still took longer on the GPU. Tile size was held at 256 rows, so this experiment does not identify an optimal tile size. All three repetitions, kernel times, and timing variation are retained in MAPLE_SHARED_MEMORY_RESULTS.md and the evidence archive. Original Maple baseline times were not substituted into the new comparisons.

@@ -11,9 +11,9 @@ Reviewed after pulling commit `7ef8264`. This is a review of saved evidence, not
 - MPI+CUDA full-prediction verification on 1, 2, 3, and 4 H100 GPUs in one node and two V100 nodes. These are correctness runs, not repeated scaling experiments.
 - Independent archive and numeric audit of all 342 benchmark measurements, 7,025 manifest entries, and 144 MPI dataset comparisons.
 
-## Priority 1. Finish Maple shared memory
+## Completed priority 1. Maple shared memory
 
-The missing Maple work is the new shared-memory kernel, not the already completed global baseline. Run both kernels together so their comparison uses the current source and the same allocation. Expect 63 measurements, with 9 serial and 54 CUDA runs. No evidence of that sweep has been pushed yet. Check Maple's queue first so an existing job is not duplicated.
+Completed on Maple in verification job 1560 and paired benchmark job 1561, both COMPLETED with exit 0:0. All 63 measurements and predictions passed both audits. See MAPLE_SHARED_MEMORY_RESULTS.md and maple-shared-memory-evidence-20261023.tar.gz with its checksum. The new evidence has not been pushed. Do not duplicate this completed sweep. The commands below are retained for reproducibility.
 
 Run from `Assignment2_folder/HPDS_assignment2` on Maple. Preserve local changes before pulling. Do not compile concurrent jobs in the same checkout because they share executable paths.
 

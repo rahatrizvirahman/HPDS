@@ -35,3 +35,7 @@ Athena jobs 3382580, 3382581 and 3382591 completed 0:0. The shared-memory strate
 ## Athena H100, CPU and MPI+CUDA validation, October 23, 2026
 
 H100 single-GPU jobs 3382994 and 3382996 completed 0:0, with all 63 benchmark predictions matching serial. CPU jobs 3383689, 3383691 and 3383699 completed 0:0, with pthreads, OpenMP and MPI matching serial at 1, 2, 4, 8 and 16 workers and all 144 benchmark predictions matching. MPI+CUDA verification passed on 1 to 4 H100 GPUs in one node (job 3382997), on 1 and 2 H100 GPUs (job 3382992) and on 2 V100 nodes (job 3382990). The timed MPI+CUDA scaling benchmark (job 3383610) was still queued and has no results. See [ATHENA_H100_SINGLE_GPU_RESULTS.md](../ATHENA_H100_SINGLE_GPU_RESULTS.md), [ATHENA_CPU_RESULTS.md](../ATHENA_CPU_RESULTS.md) and [ATHENA_MPI_CUDA_RESULTS.md](../ATHENA_MPI_CUDA_RESULTS.md).
+
+## Maple shared-memory validation completed October 23, 2026
+
+Verification job 1560 and benchmark job 1561 completed with exit 0:0 using CUDA 12.3 and GCC 11 on the GTX 1080 Ti. Both strategies passed synthetic partial-block, partial-tile and tie cases, and all 18 dataset/strategy/block prediction comparisons. The benchmark has exactly 63 measurements in 21 groups of three. All predictions match serial and all raw/summary CSV values agree with logs and independent recomputation. Both audits passed. See [MAPLE_SHARED_MEMORY_RESULTS.md](../MAPLE_SHARED_MEMORY_RESULTS.md) for full evidence and provenance.
